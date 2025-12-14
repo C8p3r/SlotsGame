@@ -1,6 +1,7 @@
 -- lever.lua
 local Config = require("conf")
 local SlotMachine = require("slot_machine") -- Needed for streak info
+local BackgroundRenderer = require("background_renderer")
 
 local Lever = {}
 
@@ -143,6 +144,76 @@ local function smooth_transition(current, target, dt)
     return current + (target - current) * math.min(1.0, TRANSITION_RATE * dt)
 end
 
+-- Helper to convert RGB to HSV
+local function rgb_to_hsv(rgb)
+    local r, g, b = rgb[1], rgb[2], rgb[3]
+    local max_val = math.max(r, g, b)
+    local min_val = math.min(r, g, b)
+    local delta = max_val - min_val
+    
+    local h = 0
+    if delta > 0 then
+        if max_val == r then
+            h = (g - b) / delta
+            if h < 0 then h = h + 6 end
+        elseif max_val == g then
+            h = (b - r) / delta + 2
+        else
+            h = (r - g) / delta + 4
+        end
+        h = h / 6
+    end
+    
+    local s = max_val > 0 and (delta / max_val) or 0
+    local v = max_val
+    
+    return {h, s, v, rgb[4]}  -- Include alpha
+end
+
+-- Helper to convert HSV to RGB
+local function hsv_to_rgb(hsv)
+    local h, s, v = hsv[1], hsv[2], hsv[3]
+    local c = v * s
+    local hp = h * 6.0
+    local x = c * (1.0 - math.abs(math.fmod(hp, 2.0) - 1.0))
+    
+    local r, g, b = 0, 0, 0
+    if hp < 1.0 then
+        r, g, b = c, x, 0
+    elseif hp < 2.0 then
+        r, g, b = x, c, 0
+    elseif hp < 3.0 then
+        r, g, b = 0, c, x
+    elseif hp < 4.0 then
+        r, g, b = 0, x, c
+    elseif hp < 5.0 then
+        r, g, b = x, 0, c
+    else
+        r, g, b = c, 0, x
+    end
+    
+    local m = v - c
+    return {r + m, g + m, b + m, hsv[4]}  -- Include alpha
+end
+
+-- Helper to shift hue of a color
+local function apply_hue(rgb_color, target_hue)
+    local hsv = rgb_to_hsv(rgb_color)
+    hsv[1] = target_hue
+    return hsv_to_rgb(hsv)
+end
+
+-- Helper to apply complementary hue and boost brightness for visibility
+local function apply_hue_complementary(rgb_color, target_hue)
+    local hsv = rgb_to_hsv(rgb_color)
+    -- Shift to complementary hue (opposite on color wheel)
+    hsv[1] = math.fmod(target_hue + 0.5, 1.0)
+    -- Boost saturation and brightness for visibility
+    hsv[2] = math.min(1.0, hsv[2] * 1.2)  -- Increase saturation by 20%
+    hsv[3] = math.min(1.0, hsv[3] * 1.15)  -- Increase brightness by 15%
+    return hsv_to_rgb(hsv)
+end
+
 
 function Lever.update(dt)
     -- 1. Determine maximum allowed lever movement
@@ -259,6 +330,12 @@ function Lever.update(dt)
     current_c_mid = lerp_color(current_c_mid, target_c_mid, TRANSITION_RATE * dt)
     current_c_end = lerp_color(current_c_end, target_c_end, TRANSITION_RATE * dt)
     
+    -- Apply background hue to lever flame colors (preserves smoke behavior)
+    local bg_hue = BackgroundRenderer.getCurrentHue()
+    local hued_c_start = apply_hue_complementary(current_c_start, bg_hue)
+    local hued_c_mid = apply_hue_complementary(current_c_mid, bg_hue)
+    local hued_c_end = apply_hue_complementary(current_c_end, bg_hue)
+    
     -- 6. Check for Intensity Jump and Trigger Flare (Masking)
     if math.abs(current_intensity - last_intensity) >= 1 then
          flare_timer = 0.1 
@@ -274,9 +351,9 @@ function Lever.update(dt)
 
     -- Set particle colors (Color gradient is calculated instantly for responsiveness)
     particle_sys:setColors(
-        current_c_start[1], current_c_start[2], current_c_start[3], current_c_start[4],
-        current_c_mid[1], current_c_mid[2], current_c_mid[3], current_c_mid[4],
-        current_c_end[1], current_c_end[2], current_c_end[3], current_c_end[4],
+        hued_c_start[1], hued_c_start[2], hued_c_start[3], hued_c_start[4],
+        hued_c_mid[1], hued_c_mid[2], hued_c_mid[3], hued_c_mid[4],
+        hued_c_end[1], hued_c_end[2], hued_c_end[3], hued_c_end[4],
         0.1, 0.1, 0.1, 0
     )
     

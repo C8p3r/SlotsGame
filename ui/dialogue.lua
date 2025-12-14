@@ -6,14 +6,14 @@ local Dialogue = {}
 
 -- 1. WINNING WHILE POSITIVE STREAK (Feeling unstoppable)
 local win_positive_messages = {
-    "SIMULATION IS GLITCHING.",
+    "CAN'T STOP WINNING!",
     "MY ROMAN EMPIRE.",
-    "ELON POWERED HANDS.",
-    "BUYING X, CHANGING LOGO.",
-    "MARS, NOT MOON.",
-    "PURESKILL. ALGO FEARS ME.",
-    "HEALTHY OUTLET ACHIEVED.",
-    "NETFLIX FREEDOM.",
+    "Brokies Stay Mad.",
+    "fuck poor people",
+    "quit your job",
+    "welcome back retirement fund",
+    "who said gambling was bad. retard",
+    "money long like a leg",
     "DIP WAS TEMPORARY.",
     "WE FOUND THE CHEAT CODE.",
     "FED, BRACE FOR IMPACT.",
@@ -22,11 +22,11 @@ local win_positive_messages = {
     "DOPAMINE SPIKE! MORE!",
     "BETTER THAN LANDLORD WIN.",
     "MY BANK ACCOUNT TRENDS.",
-    "DELETED BUDGET APP.",
-    "HOSTILE TAKEOVER.",
-    "EGO INFLATION.",
-    "QUIET QUITTING FUND.",
-    "MY HUSTLE IS 10X.",
+    "House odds? more like wilson yaoi",
+    "variance fears ts",
+    "and they said statomer cant teach",
+    "hustlin' type shit",
+    "I can afford unlimted minutes with your mom now",
     "SOFT-LAUNCH RETIREMENT.",
     "GENERATIONAL WEALTH.",
     "UNIVERSE SAID 'YOU WON.'",
@@ -125,7 +125,7 @@ local lose_negative_messages = {
 }
 
 -- Default message when user is not spinning (e.g., initial state)
-local default_message = "Click to spin!"
+local default_message = "Settings"
 
 local win_cycle = {}
 local lose_cycle = {}

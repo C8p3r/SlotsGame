@@ -1,11 +1,15 @@
 -- slot_draw.lua
 local Config = require("conf")
 local SlotBorders = require("slot_borders")
+local Background = require("background_renderer")
 
 local SlotDraw = {}
 
 -- Requires access to SlotMachine module (passed via argument)
 local Slots = nil 
+
+-- Load greyscale shader
+-- greyscale shader handled by BackgroundRenderer; no local shader needed here
 
 local function draw_wavy_text(text, x, y, font, color, seed, scale, get_wiggle_modifiers)
     if not text or text == "" then return end 
@@ -21,19 +25,19 @@ local function draw_wavy_text(text, x, y, font, color, seed, scale, get_wiggle_m
     local drift_x = 0
     local drift_y = 0
     if seed then
-         drift_x = math.sin(time * base_drift_speed + seed) * (base_drift_range * 0.5)
-         drift_y = math.cos(time * base_drift_speed * 0.8 + seed * 1.5) * (base_drift_range * 0.5)
+         drift_x = math.sin(time * base_drift_speed + seed) * (base_drift_range * 0.15)
+         drift_y = math.cos(time * base_drift_speed * 0.8 + seed * 1.5) * (base_drift_range * 0.15)
     end
     
     local cursor_x = x + drift_x
     local base_y = y + drift_y
     local frequency = 0.15 
-    local speed = 3.0      
+    local speed = 2.0      
     local amplitude = 1.5  
     
     if Slots.is_spinning() and font == Slots.state.dialogue_font then
-        speed = 8.0     
-        amplitude = 6.0 
+        speed = 4.0     
+        amplitude = 3.0 
     end
     
     for i = 1, #text do
@@ -72,66 +76,7 @@ local function draw_sprite_symbol(index, x_center, y_center, alpha, seed, loaded
     love.graphics.draw(sprite, x_center - ox + dx, y_center - oy + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE)
 end
 
--- Helper function to draw a multiplier box and the splash text over it
-local function draw_multiplier_box(state, box_y, value, label, value_color)
-    local bx = Config.MULTIPLIER_BOX_START_X
-    local by = box_y
-    local bw = Config.MULTIPLIER_BOX_WIDTH
-    local bh = Config.MULTIPLIER_BOX_HEIGHT
-    
-    local DARK_GRAY_COLOR = {0.15, 0.15, 0.15}
-    local BORDER_COLOR = {1, 1, 1}
-    
-    -- Draw Box
-    love.graphics.setColor(DARK_GRAY_COLOR)
-    love.graphics.rectangle("fill", bx, by, bw, bh, 5, 5)
-    love.graphics.setColor(BORDER_COLOR)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", bx, by, bw, bh, 5, 5)
-    love.graphics.setLineWidth(1)
-
-    -- Label (Info Font, top of the box)
-    love.graphics.setFont(state.info_font)
-    local label_tw = state.info_font:getWidth(label)
-    
-    local label_scale = 1.0
-    if label_tw > (bw - 8) then -- Reduced padding check
-         label_scale = (bw - 8) / label_tw
-    end
-
-    love.graphics.setColor(0.7, 0.7, 0.7, 1.0)
-    -- Adjusted Y position for label to be near the top (by + 1)
-    love.graphics.print(label, bx + bw/2, by + 1, 0, label_scale, label_scale, label_tw/2, 0) 
-    
-    -- Draw Multiplier Value (Symbol Font, Larger)
-    local value_str = "x" .. string.format("%.2f", value)
-    love.graphics.setFont(state.symbol_font)
-    local value_tw = state.symbol_font:getWidth(value_str)
-    
-    local vx = bx + bw/2 
-    -- Adjusted Y position for value to be higher (by + bh * 0.4)
-    local vy = by + bh * 0.4 
-    
-    love.graphics.setColor(value_color)
-    love.graphics.print(value_str, vx, vy, 0, 1.0, 1.0, value_tw/2, 0)
-    
-    -- SPLASH ANIMATION OVERLAY
-    if state.multiplier_splash_timer > 0.0 and value > 0.0 then
-        local progress = 1.0 - (state.multiplier_splash_timer / 0.5) -- 0.5s duration
-        local splash_alpha = 1.0 - progress 
-        local splash_scale = 1.0 + progress * 0.5 
-        local splash_color = {value_color[1], value_color[2], value_color[3], splash_alpha}
-        
-        -- Center splash around the value text position
-        love.graphics.push()
-        love.graphics.translate(vx, vy + state.symbol_font:getHeight()/2)
-        love.graphics.scale(splash_scale)
-        
-        draw_wavy_text(value_str, -value_tw/2, -state.symbol_font:getHeight()/2, state.symbol_font, splash_color, 700, 1.0, Slots.get_wiggle_modifiers)
-        
-        love.graphics.pop()
-    end
-end
+-- Multiplier box drawing moved to ui.lua - UI.drawIndicatorBoxes()
 
 
 function SlotDraw.draw(state)
@@ -150,15 +95,18 @@ function SlotDraw.draw(state)
 
     if state.symbol_canvas then
         love.graphics.setCanvas(state.symbol_canvas)
-        love.graphics.clear(0, 0, 0, 0)
+            love.graphics.clear(0, 0, 0, 0)
         
-        local x_walker = start_x
+            -- Desaturate the background only where slots are (stencil-based)
+            Background.drawDesaturatedSlots(start_x, slot_y_pos, Config.SLOT_WIDTH, slot_height, Config.SLOT_GAP, num_slots)
+
+            local x_walker = start_x
         
         -- --- DRAW BLACK BACKGROUND RECTANGLES ---
         love.graphics.setShader()
         for i = 1, num_slots do
              local x = start_x + (i-1) * (Config.SLOT_WIDTH + Config.SLOT_GAP)
-             love.graphics.setColor(0, 0, 0, 1)
+             love.graphics.setColor(0, 0, 0, 0.3)
              love.graphics.rectangle("fill", x, slot_y_pos, Config.SLOT_WIDTH, slot_height, 10, 10)
         end
         
@@ -298,18 +246,8 @@ function SlotDraw.draw(state)
         x_walker = x_walker + Config.SLOT_WIDTH + Config.SLOT_GAP
     end
     
-    -- --- DRAW MULTIPLIER BOXES ---
-    local spin_mult = Slots.getSpinMultiplier()
-    local streak_mult = Slots.getStreakMultiplier()
+    -- MULTIPLIER BOXES moved to ui.lua - UI.drawIndicatorBoxes()
     
-    -- Streak Multiplier Box (Below Total Bet Box)
-    draw_multiplier_box(state, Config.MULTIPLIER_STREAK_Y, streak_mult, 
-                        "STREAK BONUS", {0.2, 1.0, 0.2, 1.0})
-                        
-    -- Spin Multiplier Box (Below Streak Multiplier)
-    draw_multiplier_box(state, Config.MULTIPLIER_SPIN_Y, spin_mult, 
-                        "SPIN MULTIPLIER", {1.0, 0.8, 0.0, 1.0})
-                        
     -- --- DRAW QTE and UI ---
     
     -- 1. DRAW BLOCK GAME QTE TARGETS (Iterate through list)
@@ -503,71 +441,18 @@ function SlotDraw.draw(state)
         love.graphics.pop()
     end
 
-    -- 7. BANKROLL, PAYOUT, STREAK
-    local padding = 10 
-    local b_col = {1, 1, 1}
-    if state.bankroll < 0 then b_col = {1, 0.2, 0.2} else b_col = {0.2, 1.0, 0.2} end
-    local bank_txt = "$$$: " .. string.format("%.0f", state.bankroll)
-
-    -- Draw Backing Rectangle for BANKROLL
-    love.graphics.setColor(0, 0, 0, 0.2)
-    local tw = state.symbol_font:getWidth(bank_txt)
-    local th = state.symbol_font:getHeight()
-    love.graphics.rectangle("fill", Config.PADDING_X - padding, Config.BANKROLL_Y - padding, tw + 2*padding, th + 2*padding, 5)
-    draw_wavy_text(bank_txt, Config.PADDING_X, Config.BANKROLL_Y, state.symbol_font, b_col, 200, 1.0, Slots.get_wiggle_modifiers)
-    
-    -- PAYOUT
-    if state.display_payout_string ~= "" then
-        local pw = state.symbol_font:getWidth(state.display_payout_string)
-        local right_edge = Config.PADDING_X + Config.TOTAL_SLOTS_WIDTH
-        love.graphics.setColor(0, 0, 0, 0.2)
-        local th = state.symbol_font:getHeight()
-        love.graphics.rectangle("fill", right_edge - pw - padding, Config.PAYOUT_Y - padding, pw + 2*padding, th + 2*padding, 5)
-        draw_wavy_text(state.display_payout_string, right_edge - pw, Config.PAYOUT_Y, state.symbol_font, state.display_payout_color, 400, 1.0, Slots.get_wiggle_modifiers)
-    end
-
-    -- STREAK INDICATOR
-    local streak_text = (state.consecutive_wins < 0) and "x0" or "x" .. state.consecutive_wins
-    
-    local time = love.timer.getTime()
-    local s_color = {1, 1, 1}
-    local s_scale = 1.0
-    local abs_streak = math.abs(state.consecutive_wins)
-    
-    if state.consecutive_wins == 0 then
-        s_color = {0.5, 0.5, 0.5} 
-        s_scale = 1.0 + math.sin(time * 2.0) * 0.05 
-    elseif state.consecutive_wins > 0 then
-        local pulse_speed = 5.0 + (abs_streak * 1.5)
-        local pulse_amount = 0.1 + (math.min(abs_streak, 10) * 0.05)
-        s_scale = 1.0 + math.sin(time * pulse_speed) * pulse_amount
-        local strobe_idx = math.floor(time * pulse_speed) % 3
-        if strobe_idx == 1 then s_color = {0, 1, 1} elseif strobe_idx == 2 then s_color = {0.2, 1, 0.2} else s_color = {1, 1, 1} end 
-    else
-        local pulse_speed = 5.0 + (abs_streak * 1.5)
-        local pulse_amount = 0.1 + (math.min(abs_streak, 10) * 0.05)
-        s_scale = 1.0 + math.sin(time * pulse_speed) * pulse_amount
-        local strobe_idx = math.floor(time * pulse_speed) % 2
-        if strobe_idx == 0 then s_color = {1, 0.2, 0.2} else s_color = {0.8, 0, 1} end 
-    end
-
-    -- Draw Backing Rectangle for STREAK
-    love.graphics.setFont(state.symbol_font)
-    local sw = state.symbol_font:getWidth(streak_text)
-    local sh = state.symbol_font:getHeight()
-    love.graphics.setColor(0, 0, 0, 0.2)
-    local padding = 10
-    love.graphics.rectangle("fill", Config.STREAK_X - padding, Config.STREAK_Y - padding, sw + 2*padding, sh + 2*padding, 5)
-    
-    draw_wavy_text(streak_text, Config.STREAK_X, Config.STREAK_Y, state.symbol_font, s_color, 500, s_scale, Slots.get_wiggle_modifiers)
     
     love.graphics.setFont(state.info_font)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.print("Click to spin!", Config.GAME_WIDTH - state.info_font:getWidth("Click to spin!") - 10, Config.GAME_HEIGHT - Config.INFO_FONT_SIZE - 10)
 end
 
 function SlotDraw.setSlotMachineModule(module)
     Slots = module
+end
+
+-- Expose draw_wavy_text for use by other modules (like ui.lua)
+function SlotDraw.draw_wavy_text(text, x, y, font, color, seed, scale, get_wiggle_modifiers)
+    return draw_wavy_text(text, x, y, font, color, seed, scale, get_wiggle_modifiers)
 end
 
 return SlotDraw

@@ -131,7 +131,7 @@ function Gambling.resolveSpin(slots)
             current_loss_message_index = current_loss_message_index + 1
             message = loss_messages_cycle[current_loss_message_index] or "You are broke!"
         else
-            message = "No match. Click to spin!"
+            message = "No match. Settings"
         end
     end
     

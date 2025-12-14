@@ -1,5 +1,6 @@
 -- slot_logic.lua
 local Config = require("conf")
+local Difficulty = require("difficulty")
 
 local SlotLogic = {} 
 local Slots = nil -- Reference injected by setSlotMachineModule
@@ -142,6 +143,12 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
             targets_to_spawn = targets_to_spawn + (streak_context - 10)
         end
         
+        -- Calculate QTE duration based on components:
+        -- Last target spawns at (targets_to_spawn - 1) * QTE_TARGET_DELAY
+        -- and must decay for QTE_TARGET_LIFETIME (which is difficulty duration)
+        local difficulty_duration = Difficulty.get_duration()
+        state.block_game_timer = (targets_to_spawn - 1) * state.QTE_TARGET_DELAY + difficulty_duration
+        
         local current_time = love.timer.getTime()
         local min_padding = state.QTE_INITIAL_RADIUS + 20 
         
@@ -157,7 +164,7 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
                 y = y_pos,
                 radius = state.QTE_INITIAL_RADIUS,
                 spawn_time = current_time + spawn_offset,
-                lifetime = state.QTE_TARGET_LIFETIME,
+                lifetime = difficulty_duration,  -- Circle lifetime = difficulty duration
             }
             table.insert(state.qte_targets, target)
         end
@@ -179,7 +186,8 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
             end
         end
         
-        state.display_payout_string = "+ $" .. string.format("%.0f", final_win_amount)
+        local payout_str = (final_win_amount > 99999999 or final_win_amount < -99999999) and string.format("%.2e", final_win_amount) or string.format("%.0f", final_win_amount)
+        state.display_payout_string = "+ $" .. payout_str
         state.display_payout_color = {0.2, 1.0, 0.2} 
         state.win_flash_timer = 1.5
         state.message = state.Dialogue.getContextualMessage(true, streak_context)
@@ -221,7 +229,8 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
             end
         end
         
-        state.display_payout_string = "- $" .. string.format("%.0f", state.current_bet_amount)
+        local payout_str = (state.current_bet_amount > 99999999 or state.current_bet_amount < -99999999) and string.format("%.2e", state.current_bet_amount) or string.format("%.0f", state.current_bet_amount)
+        state.display_payout_string = "- $" .. payout_str
         state.display_payout_color = {1.0, 0.2, 0.2}
         state.message = state.Dialogue.getContextualMessage(false, streak_context)
     end

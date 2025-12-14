@@ -1,11 +1,13 @@
 -- slot_machine.lua
 local Config = require("conf")
-local Dialogue = require("dialogue") 
+local Dialogue = require("ui/dialogue") 
 local SlotLogic = require("slot_logic") 
 local SlotDraw = require("slot_draw")   
 local SlotUpdate = require("slot_update") 
 local SlotBorders = require("slot_borders")
 local SlotSmoke = require("slot_smoke")
+local BackgroundRenderer = require("background_renderer")
+local Difficulty = require("difficulty")
 
 local SlotMachine = {}
 
@@ -94,7 +96,13 @@ local state = {
     
     -- NEW AUTO-SPIN STATE
     AUTO_SPIN_DELAY = 0.2, 
-    auto_spin_timer = 0.0, 
+    auto_spin_timer = 0.0,
+    
+    -- Keepsake Effect Splash
+    keepsake_splash_timer = 0.0,
+    keepsake_splash_text = "",
+    keepsake_splash_color = {0.2, 1.0, 0.8},
+    KEEPSAKE_SPLASH_DURATION = 1.2,
     
     Dialogue = Dialogue,
 }
@@ -152,6 +160,28 @@ end
 
 function SlotMachine.get_wiggle_modifiers()
     return state.current_wiggle_speed_mod, state.current_wiggle_range_mod 
+end
+
+-- Trigger keepsake effect splash
+function SlotMachine.trigger_keepsake_splash(effect_type, effect_value)
+    local effect_text = ""
+    if effect_type == "win_multiplier" then
+        effect_text = string.format("KEEPSAKE +%.0f%%", (effect_value - 1.0) * 100)
+    elseif effect_type == "spin_cost_multiplier" then
+        local reduction = (1.0 - effect_value) * 100
+        effect_text = string.format("KEEPSAKE -%.0f%%", reduction)
+    elseif effect_type == "streak_multiplier" then
+        effect_text = string.format("KEEPSAKE +%.0f%% STREAK", (effect_value - 1.0) * 100)
+    elseif effect_type == "qte_target_lifetime_multiplier" then
+        effect_text = string.format("KEEPSAKE +%.0f%% TIME", (effect_value - 1.0) * 100)
+    elseif effect_type == "qte_circle_shrink_multiplier" then
+        effect_text = string.format("KEEPSAKE SLOWER SHRINK")
+    else
+        effect_text = "KEEPSAKE ACTIVE"
+    end
+    
+    state.keepsake_splash_text = effect_text
+    state.keepsake_splash_timer = state.KEEPSAKE_SPLASH_DURATION
 end
 
 function SlotMachine.calculate_symbol_y(slot_index, iterator_index)
@@ -216,6 +246,11 @@ function SlotMachine.getSpinMultiplier() return state.current_spin_multiplier en
 function SlotMachine.getStreakMultiplier() 
     return 1.0 + (math.max(0, state.consecutive_wins) * 0.1) -- 10% per streak
 end -- NEW
+
+function SlotMachine.getState()
+    return state
+end
+
 function SlotMachine.is_spinning() return state.is_spinning end
 function SlotMachine.is_jammed() return state.jam_duration_timer > 0 end
 function SlotMachine.is_block_game_active() return state.block_game_active end
@@ -297,9 +332,9 @@ function SlotMachine.load()
         if not ok then return nil end
         return s
     end
-    state.neon_glow_shader = load_s("neon_glow_shader.glsl")
-    state.invert_shader = load_s("invert_rgb_shader.glsl")
-    state.scanline_shader = load_s("scanline_shader.glsl")
+    state.neon_glow_shader = load_s("shaders/neon_glow_shader.glsl")
+    state.invert_shader = load_s("shaders/invert_rgb_shader.glsl")
+    state.scanline_shader = load_s("shaders/scanline_shader.glsl")
     
     state.symbol_canvas = love.graphics.newCanvas(Config.GAME_WIDTH, Config.GAME_HEIGHT)
     
@@ -366,15 +401,13 @@ function SlotMachine.start_spin()
     local num_slots = #state.slots
     local stop_times = {}
     local stop_base = dynamic_spin_duration
-    local stop_range = 0.8
+    local stop_interval = 0.4  -- Time between each slot stopping (left to right), increased for more deliberate pauses
     
     local max_stop_time = 0
-    local random_slow_slot = love.math.random(1, num_slots)
-    local SLOW_MULTIPLIER = 1.25
 
     for i = 1, num_slots do
-        local t = stop_base + love.math.random() * stop_range
-        if i == random_slow_slot then t = t * SLOW_MULTIPLIER end
+        -- Each slot stops sequentially, with the leftmost (i=1) stopping first
+        local t = stop_base + (i - 1) * stop_interval
         stop_times[i] = t
         if t > max_stop_time then max_stop_time = t end
     end
@@ -403,6 +436,8 @@ function SlotMachine.resolve_spin_result(was_blocked)
     if state.consecutive_wins > state.high_streak then
         state.high_streak = state.consecutive_wins
     end
+    -- Update background hue based on streak
+    BackgroundRenderer.setStreakHue(state.consecutive_wins)
 end
 
 function SlotMachine.keypressed(key)

@@ -34,8 +34,8 @@ Config.STOP_DURATION = 0.5
 Config.SPIN_DURATION = 1.0 
 
 -- 6. FONTS
-Config.FONT_SIZE = 30         -- Used for Bankroll, Payout, Streak
-Config.INFO_FONT_SIZE = 18    -- Used for general UI instructions
+Config.FONT_SIZE = 24         -- Used for Bankroll, Payout, Streak
+Config.INFO_FONT_SIZE = 14    -- Used for general UI instructions
 Config.DIALOGUE_FONT_SIZE = 54 -- Used for top conversational dialogue
 Config.RESULT_FONT_SIZE = 48  -- Used as the base size for splash effects
 
@@ -51,7 +51,7 @@ Config.TOTAL_SLOTS_WIDTH = total_slot_w
 -- Vertical Layout Calculations
 Config.MESSAGE_Y = 30 
 local bank_bot = 20 
-local bank_top = Config.GAME_HEIGHT - Config.FONT_SIZE - bank_bot
+local bank_top = Config.GAME_HEIGHT - Config.FONT_SIZE - bank_bot - 5
 local dial_bot = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 10
 
 -- NEW: High Streak Display Position (Below dialogue)
@@ -62,8 +62,8 @@ local high_streak_bot = Config.HIGH_STREAK_Y + Config.FONT_SIZE + 10
 local new_avail_space = bank_top - high_streak_bot
 
 -- Bottom Text Positions
+Config.PAYOUT_Y = bank_top  -- Payout aligned with balance
 Config.BANKROLL_Y = bank_top
-Config.PAYOUT_Y = bank_top
 Config.RESULT_Y = bank_top 
 
 -- Slot Vertical Centering
@@ -96,40 +96,46 @@ Config.BUTTON_START_X = 20
 local VERTICAL_SHIFT = -80 
 Config.BUTTON_START_Y = Config.SLOT_Y + VERTICAL_SHIFT 
 
--- Display Box Constants
+-- Display Box Constants (standardized with multiplier boxes)
 Config.BET_BOX_WIDTH = 120 
-Config.BET_BOX_HEIGHT = 40
+Config.BET_BOX_HEIGHT = 60  -- Match multiplier box height
 Config.BET_BOX_GAP = 10
 
 -- Multiplier Box Constants
-Config.MULTIPLIER_BOX_WIDTH = 100  
+Config.MULTIPLIER_BOX_WIDTH = Config.BUTTON_WIDTH  
 Config.MULTIPLIER_BOX_HEIGHT = 60  
 
 -- START POINT BELOW BUTTONS (Y = BUTTON_START_Y + Button Stack Height)
-local controls_start_y = Config.BUTTON_START_Y + (2 * Config.BUTTON_HEIGHT) + Config.BUTTON_GAP + 10 
+local controls_start_y = Config.BUTTON_START_Y + (2 * Config.BUTTON_HEIGHT) + Config.BUTTON_GAP + 28 
 
--- 1. FLAT BET BASE DISPLAY
-Config.FLAT_BET_BOX_Y = controls_start_y + Config.BET_BOX_GAP
--- 2. PERCENTAGE CALCULATION DISPLAY (FLAT + %)
-Config.PERCENT_BOX_Y = Config.FLAT_BET_BOX_Y + Config.BET_BOX_HEIGHT + Config.BET_BOX_GAP
+-- All indicator boxes use same X position and width
+Config.INDICATOR_BOX_START_X = Config.BUTTON_START_X
+Config.INDICATOR_BOX_WIDTH = 120
+Config.INDICATOR_BOX_HEIGHT = 60
 
--- Multiplier Box X Anchor (Centered under buttons)
-Config.MULTIPLIER_BOX_START_X = Config.BUTTON_START_X + (Config.BUTTON_WIDTH / 2) - (Config.MULTIPLIER_BOX_WIDTH / 2) 
+-- 1. PERCENTAGE CALCULATION DISPLAY (FLAT + %)
+Config.PERCENT_BOX_Y = controls_start_y + Config.BET_BOX_GAP
+-- 2. TOTAL BET BOX
+Config.TOTAL_BET_BOX_Y = Config.PERCENT_BOX_Y + Config.INDICATOR_BOX_HEIGHT + Config.BET_BOX_GAP
 
--- Multiplier Stack starts below Percentage box
-local multiplier_stack_start_y = Config.PERCENT_BOX_Y + Config.BET_BOX_HEIGHT + Config.BET_BOX_GAP
+-- Multiplier Box X Anchor (same as indicator boxes for alignment)
+Config.MULTIPLIER_BOX_START_X = Config.INDICATOR_BOX_START_X
+Config.MULTIPLIER_BOX_WIDTH = Config.INDICATOR_BOX_WIDTH
 
--- 3. SPIN MULTIPLIER (NEW POSITION)
-Config.MULTIPLIER_SPIN_Y = multiplier_stack_start_y
--- 4. STREAK MULTIPLIER (NEW POSITION)
-Config.MULTIPLIER_STREAK_Y = Config.MULTIPLIER_SPIN_Y + Config.MULTIPLIER_BOX_HEIGHT + Config.BET_BOX_GAP
--- 5. TOTAL BET BOX (NEW POSITION: BELOW MULTIPLIERS)
-Config.TOTAL_BET_BOX_Y = Config.MULTIPLIER_STREAK_Y + Config.MULTIPLIER_BOX_HEIGHT + Config.BET_BOX_GAP
+-- 3. STREAK MULTIPLIER 
+Config.MULTIPLIER_STREAK_Y = Config.TOTAL_BET_BOX_Y + Config.INDICATOR_BOX_HEIGHT + Config.BET_BOX_GAP
+-- 4. SPIN MULTIPLIER 
+Config.MULTIPLIER_SPIN_Y = Config.MULTIPLIER_STREAK_Y + Config.INDICATOR_BOX_HEIGHT + Config.BET_BOX_GAP
 
 
 Config.BUTTON_COLORS = {
-    FLAT = {0.2, 0.8, 0.2},
-    PERCENT = {0.8, 0.2, 0.8}
+    FLAT = {0.15, 0.15, 0.15, 0.8},  -- Translucent grey (matches UI boxes)
+    PERCENT = {0.15, 0.15, 0.15, 0.8}  -- Translucent grey (matches UI boxes)
+}
+
+Config.BUTTON_BORDER_COLORS = {
+    FLAT = {1, 0.84, 0},  -- Gold border
+    PERCENT = {1, 0.2, 0.8}  -- Pink border
 }
 
 -- Settings Button Configuration

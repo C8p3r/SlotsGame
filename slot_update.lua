@@ -44,19 +44,6 @@ function SlotUpdate.update(dt, state)
                 target.radius = state.QTE_MIN_RADIUS + (state.QTE_INITIAL_RADIUS - state.QTE_MIN_RADIUS) * time_left_ratio
             end
         end
-        
-        if state.block_game_timer <= 0 then
-            -- If the total timer hits zero and targets remain, fail the QTE (safety net)
-            if #state.qte_targets > 0 then
-                state.block_game_active = false
-                state.qte_targets = {} 
-                state.block_splash_timer = state.BLOCK_SPLASH_DURATION
-                state.splash_text = "TIMED OUT!"
-                state.splash_color = state.FAIL_COLOR
-                if Slots then Slots.resolve_spin_result(false) end 
-                return
-            end
-        end
     end
     
     -- *** DEFERRED AUTO-SPIN CHECK ***
@@ -95,6 +82,7 @@ function SlotUpdate.update(dt, state)
     if (state.break_splash_timer or 0) > 0 then state.break_splash_timer = state.break_splash_timer - dt end
     if (state.jam_splash_timer or 0) > 0 then state.jam_splash_timer = state.jam_splash_timer - dt end
     if (state.block_splash_timer or 0) > 0 then state.block_splash_timer = state.block_splash_timer - dt end
+    if (state.keepsake_splash_timer or 0) > 0 then state.keepsake_splash_timer = state.keepsake_splash_timer - dt end
 
     if state.slots then
         for i = 1, #state.slots do
