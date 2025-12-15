@@ -8,6 +8,7 @@ local Buttons = require("ui/buttons")
 local BaseFlame = require("base_flame")
 local StartScreen = require("ui/start_screen") 
 local SlotBorders = require("slot_borders")
+local HomeMenu = require("home_menu")
 local SlotSmoke = require("slot_smoke") 
 local Settings = require("ui/settings")
 local UI = require("ui/ui")
@@ -23,9 +24,6 @@ local game_state = "MENU" -- States: "MENU", "GAME", "PAUSE", "SETTINGS", "MENU_
 -- Menu exit animation
 local menu_exit_timer = 0
 local menu_exit_duration = 1.0  -- 1.0 seconds for longer animation
-
-local title_font
-local prompt_font
 
 local function update_scale()
     local w, h = love.graphics.getDimensions()
@@ -46,151 +44,19 @@ local function draw_menu_content()
     if game_state == "MENU_EXIT" then
         anim_progress = menu_exit_timer / menu_exit_duration
     end
-    local exit_offset = anim_progress * (w + h) * 2  -- Fast exit animation
+    -- Draw the main menu
+    HomeMenu.draw(menu_exit_timer, menu_exit_duration)
     
-    love.graphics.setColor(1, 1, 1, 1)
+    -- Draw keepsake tooltip on hover
+    local w = Config.GAME_WIDTH
+    local h = Config.GAME_HEIGHT
+    local mouse_x, mouse_y = love.mouse.getPosition()
+    local scale = math.min(love.graphics.getWidth() / w, love.graphics.getHeight() / h)
+    local game_mouse_x = (mouse_x - (love.graphics.getWidth() - w * scale) / 2) / scale
+    local game_mouse_y = (mouse_y - (love.graphics.getHeight() - h * scale) / 2) / scale
     
-    -- Draw Title
-    love.graphics.setFont(title_font)
-    local title_text = StartScreen.TITLE_TEXT -- USE CONFIG
-    local tw = title_font:getWidth(title_text)
-    local tx = w / 2 - tw / 2
-    local ty = h * 0.15 - exit_offset / 2
-    
-    -- Simple neon effect for the title
-    love.graphics.setColor(0, 0.8, 1, 0.5)
-    love.graphics.print(title_text, tx + 3, ty + 3)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(title_text, tx, ty)
-    
-    -- Draw Keepsake Selection (LEFT SIDE)
-    love.graphics.setColor(0.8, 0.8, 0.8, 1)
-    love.graphics.setFont(Slots.info_font)
-    local keepsake_label = "SELECT A KEEPSAKE:"
-    love.graphics.print(keepsake_label, w * 0.05 - exit_offset, h * 0.35)
-    Keepsakes.draw_grid(w * 0.05 - exit_offset, h * 0.4, 75, 28, true)
-    
-    -- Draw Difficulty Selection (RIGHT SIDE)
-    love.graphics.setFont(Slots.info_font)
-    love.graphics.setColor(1, 1, 1, 1)
-    local diff_label = "SELECT DIFFICULTY:"
-    local diff_label_w = Slots.info_font:getWidth(diff_label)
-    love.graphics.print(diff_label, w * 0.95 + exit_offset - diff_label_w, h * 0.35)
-    
-    -- Draw difficulty buttons
-    local button_y = h * 0.4
-    local button_width = 100
-    local button_height = 45
-    local button_spacing = 110
-    local buttons_start_x = w * 0.95 - 330  -- Right-aligned for 3 buttons
-    
-    local difficulties = {"EASY", "MEDIUM", "HARD"}
-    local button_colors = {
-        {0.2, 1.0, 0.2, 0.8},    -- Green for EASY
-        {1.0, 0.8, 0.2, 0.8},    -- Gold for MEDIUM
-        {1.0, 0.2, 0.2, 0.8}     -- Red for HARD
-    }
-    
-    for i, diff in ipairs(difficulties) do
-        local button_x = buttons_start_x + (i - 1) * button_spacing + exit_offset
-        
-        -- Highlight selected difficulty
-        if Difficulty.get() == diff then
-            love.graphics.setColor(button_colors[i][1] + 0.3, button_colors[i][2] + 0.3, button_colors[i][3] + 0.3, 1.0)
-            love.graphics.setLineWidth(4)
-        else
-            love.graphics.setColor(button_colors[i])
-            love.graphics.setLineWidth(2)
-        end
-        
-        -- Draw button background
-        love.graphics.rectangle("fill", button_x, button_y, button_width, button_height)
-        
-        -- Draw button border
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.rectangle("line", button_x, button_y, button_width, button_height)
-        love.graphics.setLineWidth(1)
-        
-        -- Draw button text
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setFont(Slots.info_font)
-        local text_w = Slots.info_font:getWidth(diff)
-        love.graphics.print(diff, button_x + button_width / 2 - text_w / 2, button_y + button_height / 2 - 8)
-    end
-    
-    -- Draw Prompt
-    love.graphics.setFont(prompt_font)
-    local prompt_text = StartScreen.PROMPT_TEXT -- USE CONFIG
-    local pw = prompt_font:getWidth(prompt_text)
-    local px = w / 2 - pw / 2
-    local py = h * 0.65 - exit_offset / 2
-    
-    -- Pulsing alpha effect for prompt
-    local pulse_alpha = 0.5 + 0.5 * math.sin(love.timer.getTime() * 4)
-    love.graphics.setColor(1, 1, 1, pulse_alpha)
-    love.graphics.print(prompt_text, px, py)
-    
-    -- Instructions - Show message if no difficulty selected
-    love.graphics.setColor(0.7, 0.7, 0.7, 1)
-    love.graphics.setFont(Slots.info_font)
-    local inst_text = "Bankroll: $" .. Config.INITIAL_BANKROLL .. " | Goal: Maintain the streak!"
-    local iw = Slots.info_font:getWidth(inst_text)
-    love.graphics.print(inst_text, w / 2 - iw / 2, h * 0.8 - exit_offset / 2)
-    
-    -- Message to select difficulty and keepsake to start
-    if not Difficulty.is_selected() then
-        love.graphics.setColor(1.0, 0.5, 0.5, 1)
-        local start_msg = "SELECT A DIFFICULTY AND KEEPSAKE TO START"
-        local sm_w = Slots.info_font:getWidth(start_msg)
-        love.graphics.print(start_msg, w / 2 - sm_w / 2, h * 0.88 - exit_offset / 2)
-    elseif not Keepsakes.get() then
-        love.graphics.setColor(1.0, 0.5, 0.5, 1)
-        local start_msg = "SELECT A KEEPSAKE TO START"
-        local sm_w = Slots.info_font:getWidth(start_msg)
-        love.graphics.print(start_msg, w / 2 - sm_w / 2, h * 0.88 - exit_offset / 2)
-    else
-        love.graphics.setColor(0.7, 0.7, 0.7, 1)
-        local start_msg = ""
-        local sm_w = Slots.info_font:getWidth(start_msg)
-        love.graphics.print(start_msg, w / 2 - sm_w / 2, h * 0.88 - exit_offset / 2)
-    end
-    
-    -- Draw START button (always visible)
-    local button_x = w / 2 - 200
-    local button_y = h * 0.48 - 20 - exit_offset / 2
-    local button_w = 400
-    local button_h = 120
-    
-    local is_enabled = Difficulty.is_selected() and Keepsakes.get()
-    
-    if is_enabled then
-        -- Green enabled button
-        love.graphics.setColor(0.2, 0.8, 0.2, 0.9)
-        love.graphics.rectangle("fill", button_x, button_y, button_w, button_h)
-        love.graphics.setColor(0.5, 1.0, 0.5, 1.0)
-    else
-        -- Grey disabled button
-        love.graphics.setColor(0.3, 0.3, 0.3, 0.6)
-        love.graphics.rectangle("fill", button_x, button_y, button_w, button_h)
-        love.graphics.setColor(0.5, 0.5, 0.5, 0.6)
-    end
-    
-    -- Button border
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", button_x, button_y, button_w, button_h)
-    love.graphics.setLineWidth(1)
-    
-    -- Button text
-    if is_enabled then
-        love.graphics.setColor(1, 1, 1, 1)
-    else
-        love.graphics.setColor(0.6, 0.6, 0.6, 0.6)
-    end
-    love.graphics.setFont(title_font)  -- Use larger title font
-    local start_text = "START"
-    local text_w = title_font:getWidth(start_text)
-    local text_h = title_font:getHeight()
-    love.graphics.print(start_text, button_x + button_w / 2 - text_w / 2, button_y + button_h / 2 - text_h / 2)
+    local hovered_id = Keepsakes.get_hovered_keepsake(game_mouse_x, game_mouse_y, w * 0.02, h * 0.25 + 50, 96, 32)
+    HomeMenu.draw_keepsake_tooltip(hovered_id)
     
 
 end
@@ -213,62 +79,20 @@ local function draw_pause_content()
     love.graphics.print(prompt, Config.GAME_WIDTH / 2 - pw / 2, Config.GAME_HEIGHT * 0.6)
 end
 
--- Helper to check if difficulty button was clicked
 local function check_difficulty_click(x, y)
-    local w = Config.GAME_WIDTH
-    local h = Config.GAME_HEIGHT
-    local button_y = h * 0.4
-    local button_spacing = 110
-    local button_width = 100
-    local button_height = 45
-    local buttons_start_x = w * 0.95 - 330  -- Right-aligned for 3 buttons
-    
-    local difficulties = {"EASY", "MEDIUM", "HARD"}
-    
-    for i, diff in ipairs(difficulties) do
-        local button_x = buttons_start_x + (i - 1) * button_spacing
-        
-        if x >= button_x and x <= button_x + button_width and
-           y >= button_y and y <= button_y + button_height then
-            Difficulty.set(diff)
-            return true
-        end
-    end
-    
-    return false
+    return HomeMenu.check_difficulty_click(x, y)
 end
 
 
 -- Helper to check if START button was clicked
 local function check_start_button_click(x, y)
-    local w = Config.GAME_WIDTH
-    local h = Config.GAME_HEIGHT
-    
-    -- Only show START button if both difficulty and keepsake are selected
-    if not Difficulty.is_selected() or not Keepsakes.get() then
-        return false
-    end
-    
-    local button_x = w / 2 - 200
-    local button_y = h * 0.48 - 20
-    local button_w = 400
-    local button_h = 120
-    
-    if x >= button_x and x <= button_x + button_w and
-       y >= button_y and y <= button_y + button_h then
-        return true
-    end
-    
-    return false
+    return HomeMenu.check_start_button_click(x, y)
 end
 
 
 -- Helper to check if keepsake was clicked
 local function check_keepsake_click(x, y)
-    local w = Config.GAME_WIDTH
-    local grid_start_x = w * 0.05
-    local grid_start_y = Config.GAME_HEIGHT * 0.4
-    return Keepsakes.check_click(x, y, grid_start_x, grid_start_y, 75, 28)
+    return HomeMenu.check_keepsake_click(x, y)
 end
 
 
@@ -288,6 +112,7 @@ function love.load()
     -- Load Title and Prompt using the splash font
     title_font = love.graphics.newFont(font_file, StartScreen.TITLE_SIZE)
     prompt_font = love.graphics.newFont(font_file, StartScreen.PROMPT_SIZE)
+    start_button_font = love.graphics.newFont(font_file, 100)
     
     Background.load()
     Slots.load()
@@ -298,6 +123,7 @@ function love.load()
     SlotSmoke.load() 
     Settings.load()
     Keepsakes.load()
+    HomeMenu.load_fonts()
     update_scale()
 end
 
@@ -408,6 +234,13 @@ function love.draw()
         UI.drawIndicatorBoxes(state, Slots, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         UI.drawButtons(state, Slots, nil, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         UI.drawBankrollAndPayout(state, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
+        
+        -- 4f-2. Draw lucky box tooltip on hover
+        local game_mouse_x, game_mouse_y = love.mouse.getPosition()
+        local w, h = love.graphics.getDimensions()
+        -- Transform mouse coords to game space if needed
+        local lucky_hover = HomeMenu.get_lucky_box_hover(game_mouse_x, game_mouse_y)
+        HomeMenu.draw_lucky_box_tooltip(lucky_hover)
         
         -- 4g. Draw the full settings menu overlay (on top of everything else)
         if game_state == "SETTINGS" then

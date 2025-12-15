@@ -203,7 +203,7 @@ function Settings.draw_menu()
     -- Draw keepsake selection grid
     local grid_start_x = MENU_X + MENU_W * 0.5 - 160
     local grid_start_y = MENU_Y + MENU_H * 0.45
-    Keepsakes.draw_grid(grid_start_x, grid_start_y, 60, 6, true)
+    Keepsakes.draw_grid(grid_start_x, grid_start_y, 64, 12, true)
     
     love.graphics.pop()
 end

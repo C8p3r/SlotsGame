@@ -6,7 +6,8 @@ local Keepsakes = {}
 
 -- Keepsake state
 local selected_keepsake = nil
-local keepsake_textures = {}
+local keepsake_spritesheet = nil
+local keepsake_quads = {}
 local blank_texture = nil
 
 -- Grid dimensions
@@ -143,37 +144,33 @@ local KEEPSAKE_DEFINITIONS = {
     },
 }
 
--- Load keepsake textures
+-- Load keepsake textures from spritesheet
 function Keepsakes.load()
-    -- Load blank texture first
-    local ok_blank, blank_img = pcall(love.graphics.newImage, "assets/keepsakes/keepsake_blank.png")
-    if ok_blank then
-        blank_texture = blank_img
+    -- Load spritesheet (128x128, 4x4 grid of 32x32 sprites)
+    local ok_sheet, sheet = pcall(love.graphics.newImage, "assets/keepsakes/keepsakes_grid.png")
+    if ok_sheet then
+        keepsake_spritesheet = sheet
+        keepsake_spritesheet:setFilter("nearest", "nearest")
+        
+        -- Create quads for each keepsake (32x32 each)
+        for i = 1, GRID_SIZE do
+            local idx = i - 1  -- 0-indexed
+            local col = idx % GRID_COLS
+            local row = math.floor(idx / GRID_COLS)
+            local x = col * 32
+            local y = row * 32
+            keepsake_quads[i] = love.graphics.newQuad(x, y, 32, 32, 128, 128)
+        end
     else
-        -- Create a simple grey blank texture if file doesn't exist
-        local imgData = love.image.newImageData(64, 64)
-        for x = 0, 63 do
-            for y = 0, 63 do
+        -- Fallback: create blank texture if spritesheet not found
+        local imgData = love.image.newImageData(32, 32)
+        for x = 0, 31 do
+            for y = 0, 31 do
                 imgData:setPixel(x, y, 0.3, 0.3, 0.3, 1)
             end
         end
         blank_texture = love.graphics.newImage(imgData)
-        -- Use nearest filter for crisp appearance
         blank_texture:setFilter("nearest", "nearest")
-    end
-    
-    for i = 1, GRID_SIZE do
-        local texture_path = "assets/keepsakes/keepsake_" .. i .. ".png"
-        local ok, img = pcall(love.graphics.newImage, texture_path)
-        
-        if ok then
-            -- Use nearest filter for crisp, sharp scaling
-            img:setFilter("nearest", "nearest")
-            keepsake_textures[i] = img
-        else
-            -- Use blank texture as fallback
-            keepsake_textures[i] = blank_texture
-        end
     end
 end
 
@@ -200,10 +197,15 @@ function Keepsakes.is_selected(id)
     return selected_keepsake == id
 end
 
--- Get keepsake texture
+-- Get keepsake texture (spritesheet quad)
 function Keepsakes.get_texture(id)
     if id < 1 or id > GRID_SIZE then return nil end
-    return keepsake_textures[id]
+    return keepsake_quads[id]
+end
+
+-- Get spritesheet image
+function Keepsakes.get_spritesheet()
+    return keepsake_spritesheet
 end
 
 -- Get all effects for selected keepsake
@@ -243,29 +245,35 @@ function Keepsakes.draw_grid(start_x, start_y, cell_size, cell_gap, show_names)
         local x = start_x + col * (cell_size + cell_gap)
         local y = start_y + row * (cell_size + cell_gap)
         
-        -- Draw cell background
-        local bg_color = {0.2, 0.2, 0.2, 0.8}
-        love.graphics.setColor(bg_color)
-        love.graphics.rectangle("fill", x, y, cell_size, cell_size, 5, 5)
+        -- Calculate drift effect
+        local time = love.timer.getTime()
+        local seed = i * 0.5  -- Unique seed per keepsake
+        local dx = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
+        local dy = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
         
-        -- Draw texture or blank
-        local texture = keepsake_textures[i]
-        if texture then
-            love.graphics.setColor(1, 1, 1, 1)  -- White, fully opaque
-            love.graphics.draw(texture, x, y, 0, cell_size / texture:getWidth(), cell_size / texture:getHeight())
+        -- Draw glow behind if selected
+        if Keepsakes.is_selected(i) then
+            love.graphics.setColor(1, 1, 0, 0.3)  -- Yellow glow
+            love.graphics.rectangle("fill", x, y, cell_size, cell_size, 5, 5)
         end
         
-        -- Draw outline if selected
-        if Keepsakes.is_selected(i) then
-            love.graphics.setColor(1, 1, 0, 1)  -- Yellow outline
-            love.graphics.setLineWidth(4)
-            love.graphics.rectangle("line", x, y, cell_size, cell_size, 5, 5)
-            love.graphics.setLineWidth(1)
-        else
-            -- Normal border
-            love.graphics.setColor(0.4, 0.4, 0.4, 1)
-            love.graphics.setLineWidth(1)
-            love.graphics.rectangle("line", x, y, cell_size, cell_size, 5, 5)
+        -- Draw sprite from spritesheet
+        if keepsake_spritesheet and keepsake_quads[i] then
+            love.graphics.setColor(1, 1, 1, 1)  -- White, fully opaque
+            -- Calculate integer scale factor for crisp appearance (32x32 source)
+            local scale = math.floor(cell_size / 32)
+            local actual_size = 32 * scale
+            local offset_x = (cell_size - actual_size) / 2
+            local offset_y = (cell_size - actual_size) / 2
+            love.graphics.draw(keepsake_spritesheet, keepsake_quads[i], x + offset_x + dx, y + offset_y + dy, 0, scale, scale)
+        elseif blank_texture then
+            -- Fallback to blank texture
+            love.graphics.setColor(1, 1, 1, 1)
+            local scale = math.floor(cell_size / 32)
+            local actual_size = 32 * scale
+            local offset_x = (cell_size - actual_size) / 2
+            local offset_y = (cell_size - actual_size) / 2
+            love.graphics.draw(blank_texture, x + offset_x + dx, y + offset_y + dy, 0, scale, scale)
         end
         
         -- Draw name below if enabled
@@ -295,6 +303,26 @@ function Keepsakes.check_click(x, y, start_x, start_y, cell_size, cell_gap)
         if x >= cell_x and x <= cell_x + cell_size and
            y >= cell_y and y <= cell_y + cell_size then
             Keepsakes.set(i)
+            return i
+        end
+    end
+    
+    return nil
+end
+
+-- Get keepsake at mouse position
+function Keepsakes.get_hovered_keepsake(mouse_x, mouse_y, start_x, start_y, cell_size, cell_gap)
+    cell_size = cell_size or 80
+    cell_gap = cell_gap or 10
+    
+    for i = 1, GRID_SIZE do
+        local col = (i - 1) % GRID_COLS
+        local row = math.floor((i - 1) / GRID_COLS)
+        local x = start_x + col * (cell_size + cell_gap)
+        local y = start_y + row * (cell_size + cell_gap)
+        
+        if mouse_x >= x and mouse_x <= x + cell_size and
+           mouse_y >= y and mouse_y <= y + cell_size then
             return i
         end
     end

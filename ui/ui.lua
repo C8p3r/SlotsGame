@@ -57,7 +57,9 @@ end
 
 function UI.drawIndicatorBoxes(state, Slots, draw_wavy_text, get_wiggle_modifiers)
     -- Streak Multiplier Box
-    local streak_mult = (state.consecutive_wins > 0) and (UIConfig.STREAK_MULTIPLIER_BASE + state.consecutive_wins * UIConfig.STREAK_MULTIPLIER_INCREMENT) or UIConfig.STREAK_MULTIPLIER_BASE
+    local Keepsakes = require("keepsakes")
+    local base_streak_mult = (state.consecutive_wins > 0) and (UIConfig.STREAK_MULTIPLIER_BASE + state.consecutive_wins * UIConfig.STREAK_MULTIPLIER_INCREMENT) or UIConfig.STREAK_MULTIPLIER_BASE
+    local streak_mult = base_streak_mult * Keepsakes.get_effect("streak_multiplier")
     draw_multiplier_box(state, Config.MULTIPLIER_STREAK_Y, streak_mult, 
                         "STREAK BONUS", UIConfig.STREAK_BONUS_COLOR, draw_wavy_text, get_wiggle_modifiers)
     
@@ -205,14 +207,27 @@ function UI.drawDisplayBoxes()
     local keepsake_id = Keepsakes.get()
     
     if keepsake_id then
-        local texture = Keepsakes.get_texture(keepsake_id)
-        if texture then
-            -- Draw texture scaled to fit box
+        local quad = Keepsakes.get_texture(keepsake_id)
+        if quad then
+            -- Draw quad from spritesheet (32x32 source size)
             local texture_size = UIConfig.LUCKY_BOX_HEIGHT - 10
-            local texture_x = lucky_x + (UIConfig.LUCKY_BOX_WIDTH - texture_size) / 2
+            local scale = texture_size / 32  -- 32x32 is source size
+            local scaled_size = 32 * scale
+            local texture_x = lucky_x + (UIConfig.LUCKY_BOX_WIDTH - scaled_size) / 2
             local texture_y = lucky_y + 5
+            
+            -- Add drift effect
+            local time = love.timer.getTime()
+            local seed = keepsake_id * 0.5
+            local dx = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
+            local dy = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
+            
             love.graphics.setColor(1, 1, 1, 1)
-            love.graphics.draw(texture, texture_x, texture_y, 0, texture_size / texture:getWidth(), texture_size / texture:getHeight())
+            -- Get spritesheet from keepsakes module
+            local spritesheet = Keepsakes.get_spritesheet()
+            if spritesheet then
+                love.graphics.draw(spritesheet, quad, texture_x + dx, texture_y + dy, 0, scale, scale)
+            end
         else
             -- Fallback to text if texture unavailable
             local keepsake_name = Keepsakes.get_name()

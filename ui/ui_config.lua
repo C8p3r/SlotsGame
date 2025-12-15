@@ -116,7 +116,7 @@ UIConfig.BOX_CORNER_RADIUS = 5
 -- STREAKS AND MULTIPLIERS
 -- ============================================================================
 UIConfig.STREAK_MULTIPLIER_BASE = 1.0
-UIConfig.STREAK_MULTIPLIER_INCREMENT = 0.5
+UIConfig.STREAK_MULTIPLIER_INCREMENT = 0.10
 
 -- ============================================================================
 -- BUTTON DEFINITIONS

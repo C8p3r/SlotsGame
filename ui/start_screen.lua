@@ -9,7 +9,7 @@ StartScreen.PAUSE_PROMPT = "Press ESC to Resume"
 
 -- Font sizes for the main title and prompt
 -- (Note: These sizes are used in main.lua's love.load function)
-StartScreen.TITLE_SIZE = 100
+StartScreen.TITLE_SIZE = 160
 StartScreen.PROMPT_SIZE = 32
 
 return StartScreen
