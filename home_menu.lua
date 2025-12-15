@@ -25,7 +25,8 @@ end
 
 -- Draw the main menu
 function HomeMenu.draw(menu_exit_timer, menu_exit_duration)
-    local w, h = love.graphics.getDimensions()
+    local w = Config.GAME_WIDTH
+    local h = Config.GAME_HEIGHT
     
     -- Calculate animation progress (0 to 1)
     local anim_progress = menu_exit_timer / menu_exit_duration
@@ -161,7 +162,7 @@ function HomeMenu.check_difficulty_click(x, y)
     local button_spacing = 110
     local button_width = 100
     local button_height = 45
-    local buttons_start_x = w / 2 - 110  -- Center-aligned to match START button center
+    local buttons_start_x = w / 2 - 110
     
     local difficulties = {"EASY", "MEDIUM", "HARD"}
     
@@ -209,19 +210,46 @@ function HomeMenu.draw_keepsake_tooltip(hovered_id)
     local def = Keepsakes.get_definition(hovered_id)
     if not def then return end
     
-    local mouse_x, mouse_y = love.mouse.getPosition()
-    local w, h = love.graphics.getDimensions()
+    local game_w, game_h = Config.GAME_WIDTH, Config.GAME_HEIGHT
     
-    -- Tooltip dimensions
-    local tooltip_width = 250
-    local tooltip_height = 100
+    -- Calculate keepsake grid position
+    local grid_start_x = game_w * 0.02
+    local grid_start_y = game_h * 0.25 + 50
+    local item_size = 96
+    local grid_cols = 4
+    
+    -- Calculate position of the hovered keepsake in the grid
+    local idx = hovered_id - 1
+    local col = idx % grid_cols
+    local row = math.floor(idx / grid_cols)
+    
+    local keepsake_x = grid_start_x + col * item_size
+    local keepsake_y = grid_start_y + row * item_size
+    local keepsake_center_x = keepsake_x + item_size / 2
+    
+    -- Position tooltip above the keepsake item, centered
+    local tooltip_width = 280
+    local tooltip_height = 125
     local padding = 10
     
-    -- Position tooltip near mouse, but keep it on screen
-    local tooltip_x = math.min(mouse_x + 15, w - tooltip_width - 10)
-    local tooltip_y = math.min(mouse_y + 15, h - tooltip_height - 10)
-    tooltip_x = math.max(tooltip_x, 10)
-    tooltip_y = math.max(tooltip_y, 10)
+    local tooltip_x = keepsake_center_x - tooltip_width / 2
+    local tooltip_y = keepsake_y - tooltip_height - 15
+    
+    -- Add sinusoidal drift
+    local drift_x = math.sin(love.timer.getTime() * 2) * 8
+    local drift_y = math.sin(love.timer.getTime() * 1.5 + 1) * 6
+    tooltip_x = tooltip_x + drift_x
+    tooltip_y = tooltip_y + drift_y
+    
+    -- Keep tooltip on screen
+    if tooltip_x < 10 then
+        tooltip_x = 10
+    elseif tooltip_x + tooltip_width > game_w - 10 then
+        tooltip_x = game_w - tooltip_width - 10
+    end
+    if tooltip_y < 10 then
+        tooltip_y = keepsake_y + item_size + 15
+    end
     
     -- Draw background
     love.graphics.setColor(0.1, 0.1, 0.1, 0.95)
@@ -240,32 +268,77 @@ function HomeMenu.draw_keepsake_tooltip(hovered_id)
     love.graphics.print(def.name, tooltip_x + padding, tooltip_y + padding)
     
     -- Draw effects as text
-    love.graphics.setColor(0.8, 0.8, 0.8, 1)
     local effects_font = love.graphics.newFont("splashfont.otf", 11)
     love.graphics.setFont(effects_font)
     
-    -- Use custom tooltip if available, otherwise generate from effects
-    local effects_text = def.tooltip or ""
-    if effects_text == "" then
-        if def.effects.win_multiplier and def.effects.win_multiplier ~= 1.0 then
-            local pct = math.floor((def.effects.win_multiplier - 1.0) * 100)
-            effects_text = effects_text .. "Winnings: " .. (pct > 0 and "+" or "") .. pct .. "%\n"
+    -- Check if tooltip is a table with benefit/downside
+    if type(def.tooltip) == "table" and def.tooltip.benefit then
+        -- Draw benefit line in green
+        love.graphics.setColor(0.2, 1, 0.2, 1)
+        love.graphics.print(def.tooltip.benefit, tooltip_x + padding, tooltip_y + padding + 25)
+        
+        -- Draw downside line in magenta
+        love.graphics.setColor(1, 0.2, 1, 1)
+        love.graphics.print(def.tooltip.downside, tooltip_x + padding, tooltip_y + padding + 42)
+        
+        -- Draw flavor line in orange
+        if def.tooltip.flavor then
+            love.graphics.setColor(1, 0.7, 0.2, 1)
+            love.graphics.setFont(effects_font)
+            -- Wrap flavor text if needed
+            local max_width = tooltip_width - padding * 2
+            local wrapped = {}
+            local words = {}
+            for word in def.tooltip.flavor:gmatch("%S+") do
+                table.insert(words, word)
+            end
+            local current_line = ""
+            for _, word in ipairs(words) do
+                local test_line = current_line == "" and word or current_line .. " " .. word
+                if effects_font:getWidth(test_line) > max_width then
+                    if current_line ~= "" then
+                        table.insert(wrapped, current_line)
+                        current_line = word
+                    else
+                        table.insert(wrapped, word)
+                        current_line = ""
+                    end
+                else
+                    current_line = test_line
+                end
+            end
+            if current_line ~= "" then
+                table.insert(wrapped, current_line)
+            end
+            for i, line in ipairs(wrapped) do
+                love.graphics.print(line, tooltip_x + padding, tooltip_y + padding + 60 + (i-1) * 12)
+            end
         end
-        if def.effects.spin_cost_multiplier and def.effects.spin_cost_multiplier ~= 1.0 then
-            local pct = math.floor((1.0 - def.effects.spin_cost_multiplier) * 100)
-            effects_text = effects_text .. "Spin Cost: " .. (pct > 0 and "-" or "") .. pct .. "%\n"
+    else
+        -- Fallback for old string tooltips
+        local effects_text = def.tooltip or ""
+        if effects_text == "" then
+            if def.effects.win_multiplier and def.effects.win_multiplier ~= 1.0 then
+                local pct = math.floor((def.effects.win_multiplier - 1.0) * 100)
+                effects_text = effects_text .. "Winnings: " .. (pct > 0 and "+" or "") .. pct .. "%\n"
+            end
+            if def.effects.spin_cost_multiplier and def.effects.spin_cost_multiplier ~= 1.0 then
+                local pct = math.floor((1.0 - def.effects.spin_cost_multiplier) * 100)
+                effects_text = effects_text .. "Spin Cost: " .. (pct > 0 and "-" or "") .. pct .. "%\n"
+            end
+            if def.effects.streak_multiplier and def.effects.streak_multiplier ~= 1.0 then
+                local pct = math.floor((def.effects.streak_multiplier - 1.0) * 100)
+                effects_text = effects_text .. "Streak: " .. (pct > 0 and "+" or "") .. pct .. "%"
+            end
         end
-        if def.effects.streak_multiplier and def.effects.streak_multiplier ~= 1.0 then
-            local pct = math.floor((def.effects.streak_multiplier - 1.0) * 100)
-            effects_text = effects_text .. "Streak: " .. (pct > 0 and "+" or "") .. pct .. "%"
+        
+        if effects_text == "" then
+            effects_text = "No major effects"
         end
+        
+        love.graphics.setColor(0.8, 0.8, 0.8, 1)
+        love.graphics.print(effects_text, tooltip_x + padding, tooltip_y + padding + 25)
     end
-    
-    if effects_text == "" then
-        effects_text = "No major effects"
-    end
-    
-    love.graphics.print(effects_text, tooltip_x + padding, tooltip_y + padding + 25)
 end
 
 -- Check if mouse is hovering over the lucky box during gameplay
@@ -292,19 +365,39 @@ function HomeMenu.draw_lucky_box_tooltip(keepsake_id)
     local def = Keepsakes.get_definition(keepsake_id)
     if not def then return end
     
-    local mouse_x, mouse_y = love.mouse.getPosition()
-    local w, h = love.graphics.getDimensions()
+    local UIConfig = require("ui/ui_config")
+    local Config = require("conf")
+    local game_w, game_h = Config.GAME_WIDTH, Config.GAME_HEIGHT
     
-    -- Tooltip dimensions
+    -- Calculate lucky box position (same as in get_lucky_box_hover)
+    local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+    local lucky_x = Config.BUTTON_START_X
+    local lucky_y = box_y
+    local lucky_center_x = lucky_x + UIConfig.LUCKY_BOX_WIDTH / 2
+    
+    -- Position tooltip above the lucky box, centered
     local tooltip_width = 250
     local tooltip_height = 100
     local padding = 10
     
-    -- Position tooltip near mouse, but keep it on screen
-    local tooltip_x = math.min(mouse_x + 15, w - tooltip_width - 10)
-    local tooltip_y = math.min(mouse_y + 15, h - tooltip_height - 10)
-    tooltip_x = math.max(tooltip_x, 10)
-    tooltip_y = math.max(tooltip_y, 10)
+    local tooltip_x = lucky_center_x - tooltip_width / 2
+    local tooltip_y = lucky_y - tooltip_height - 15
+    
+    -- Add sinusoidal drift
+    local drift_x = math.sin(love.timer.getTime() * 2) * 8
+    local drift_y = math.sin(love.timer.getTime() * 1.5 + 1) * 6
+    tooltip_x = tooltip_x + drift_x
+    tooltip_y = tooltip_y + drift_y
+    
+    -- Keep tooltip on screen
+    if tooltip_x < 10 then
+        tooltip_x = 10
+    elseif tooltip_x + tooltip_width > game_w - 10 then
+        tooltip_x = game_w - tooltip_width - 10
+    end
+    if tooltip_y < 10 then
+        tooltip_y = lucky_y + UIConfig.LUCKY_BOX_HEIGHT + 15
+    end
     
     -- Draw background
     love.graphics.setColor(0.1, 0.1, 0.1, 0.95)

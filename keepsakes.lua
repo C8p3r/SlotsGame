@@ -22,189 +22,204 @@ local KEEPSAKE_DEFINITIONS = {
         id = 1,
         name = "Lucky Coin",
         effects = {
-            win_multiplier = 1.1,  -- 10% more winnings
+            win_multiplier = 1.4,  -- 40% more winnings
+            spin_cost_multiplier = 1.15,  -- but 15% more expensive spins
         },
         splash_text = "LUCKY BOOST",
-        splash_timing = "score",  -- "spin" or "score"
+        splash_timing = "score",
         splash_color = {1, 1, 0},  -- Yellow
-        tooltip = "Increases all winnings by 10%"
+        tooltip = {benefit = "+40% Wins", downside = "-15% Spin Cost", flavor = "An ancient coin that draws fortune to those brave enough to pay"}
     },
     {
         id = 2,
-        name = "Golden Bell",
+        name = "Mutant Clover",
         effects = {
-            spin_cost_multiplier = 0.9,  -- 10% cheaper spins
+            spin_cost_multiplier = 0.65,  -- 35% cheaper spins
+            win_multiplier = 0.85,  -- but 15% less winnings
         },
         splash_text = "BARGAIN SPIN",
-        splash_timing = "spin",  -- "spin" or "score"
+        splash_timing = "spin",
         splash_color = {1, 0.8, 0},  -- Gold
-        tooltip = "Reduces Spin costs by 10%"
+        tooltip = {benefit = "-35% Spin Cost", downside = "-15% Wins", flavor = "A humble clover blessed by nature itself"}
     },
     {
         id = 3,
-        name = "Fortune Stone",
+        name = "Hex Ward",
         effects = {
-            qte_target_lifetime_multiplier = 1.1,  -- 10% more time for QTE
+            qte_target_lifetime_multiplier = 1.35,  -- 35% more time for QTE
+            qte_circle_shrink_multiplier = 1.2,  -- but circle shrinks faster
         },
         splash_text = "MORE TIME!",
         splash_timing = "qte",
         splash_color = {0.5, 1, 0.8},  -- Cyan
-        tooltip = "Gives 10% more time in QTE"
+        tooltip = {benefit = "+35% QTE Time", downside = "+20% Circle Shrink", flavor = "A protective sigil against the spinning wheel's haste"}
     },
     {
         id = 4,
-        name = "Jade Token",
+        name = "Malachite Lump",
         effects = {
-            streak_multiplier = 1.05,  -- 5% more streak bonus
+            streak_multiplier = 1.2,  -- 20% more streak bonus
+            spin_cost_multiplier = 1.25,  -- but 25% more expensive
         },
         splash_text = "STREAK POWER",
         splash_timing = "score",
         splash_color = {0.2, 1, 0.5},  -- Green
-        tooltip = "Increases streak multiplier by 5%"
+        tooltip = {benefit = "+20% Streak Bonus", downside = "+25% Spin Cost", flavor = "Stone that stores the momentum of fortune"}
     },
     {
         id = 5,
         name = "Silver Locket",
         effects = {
-            win_multiplier = 1.05,
-            spin_cost_multiplier = 0.95,
+            win_multiplier = 1.2,
+            spin_cost_multiplier = 0.8,
+            qte_target_lifetime_multiplier = 0.9,  -- -10% QTE time
         },
         splash_text = "BALANCED LUCK",
         splash_timing = "score",
         splash_color = {0.8, 0.8, 1},  -- Silver
-        tooltip = "Balanced boost: +5% wins, -5% spin cost"
+        tooltip = {benefit = "+20% Wins, -20% Spins", downside = "-10% QTE Time", flavor = "A locket containing memories of perfect spins"}
     },
     {
         id = 6,
-        name = "Pearl Charm",
+        name = "Eternal Hourglass",
         effects = {
-            qte_circle_shrink_multiplier = 0.9,  -- Slower shrink
+            qte_circle_shrink_multiplier = 0.7,  -- 30% slower shrink
+            qte_target_lifetime_multiplier = 0.85,  -- but 15% less time
         },
         splash_text = "SLOWER CIRCLE",
         splash_timing = "qte",
         splash_color = {1, 0.8, 1},  -- Pearl
-        tooltip = "QTE circle shrinks 10% slower"
+        tooltip = {benefit = "-30% Circle Shrink", downside = "-15% QTE Time", flavor = "Shaped by the ocean's eternal patience"}
     },
     {
         id = 7,
         name = "Ruby Heart",
         effects = {
-            win_multiplier = 1.15,
-            streak_multiplier = 1.02,
+            win_multiplier = 1.5,  -- 50% more winnings
+            streak_multiplier = 1.1,  -- 10% more streak
+            qte_circle_shrink_multiplier = 1.3,  -- but circle shrinks 30% faster
         },
         splash_text = "RUBY BLESSING",
         splash_timing = "score",
         splash_color = {1, 0.2, 0.5},  -- Ruby
-        tooltip = "Strong wins: +15% winnings, +2% streak"
+        tooltip = {benefit = "+50% Wins, +10% Streak", downside = "+30% Circle Shrink", flavor = "A heart that pulses with the thrill of risk"}
     },
     {
         id = 8,
-        name = "Sapphire Crown",
+        name = "Frigid Crown",
         effects = {
-            qte_target_lifetime_multiplier = 1.15,
-            qte_circle_shrink_multiplier = 0.85,
+            qte_target_lifetime_multiplier = 1.4,  -- 40% more time
+            qte_circle_shrink_multiplier = 0.7,  -- 30% slower shrink
+            spin_cost_multiplier = 1.35,  -- but 35% more expensive
         },
         splash_text = "CROWN POWER",
         splash_timing = "qte",
         splash_color = {0.2, 0.8, 1},  -- Sapphire
-        tooltip = "Master of QTE: +15% time, -15% shrink speed"
+        tooltip = {benefit = "+40% Time, -30% Shrink", downside = "+35% Spin Cost", flavor = "A crown of ice that commands the spinning wheel"}
     },
     {
         id = 9,
-        name = "Emerald Locket",
+        name = "Voodoo Paper",
         effects = {
-            spin_cost_multiplier = 0.85,
-            streak_multiplier = 1.03,
+            spin_cost_multiplier = 0.7,  -- 30% cheaper
+            streak_multiplier = 1.25,  -- 25% more streak
+            win_multiplier = 0.9,  -- but 10% less base wins
         },
         splash_text = "EMERALD FAVOR",
         splash_timing = "score",
         splash_color = {0.2, 1, 0.5},  -- Emerald
-        tooltip = "Budget streaker: -15% spins, +3% streak"
+        tooltip = {benefit = "-30% Spins, +25% Streak", downside = "-10% Wins", flavor = "A ritual scroll written in favor of the fortunate"}
     },
     {
         id = 10,
-        name = "Rabits Paw",
+        name = "Lushious Paw",
         effects = {
-            win_multiplier = 1.2,
-            spin_cost_multiplier = 1.05,  -- Slightly more expensive but bigger wins
+            win_multiplier = 1.55,  -- 55% more winnings (huge!)
+            spin_cost_multiplier = 1.4,  -- but 40% more expensive
+            qte_target_lifetime_multiplier = 0.8,  -- QTE time reduced
         },
         splash_text = "LUCKY PAW",
         splash_timing = "score",
         splash_color = {1, 0.6, 0.2},  -- Orange
-        tooltip = "High risk, high reward: +20% wins, +5% spin cost"
+        tooltip = {benefit = "+55% Wins", downside = "+40% Spins, -20% QTE", flavor = "A paw print that leaves only prosperity behind"}
     },
     {
         id = 11,
         name = "Topaz Star",
         effects = {
-            qte_target_lifetime_multiplier = 1.2,
+            qte_target_lifetime_multiplier = 1.45,  -- 45% more QTE time
+            spin_cost_multiplier = 1.2,  -- but 20% more expensive
         },
         splash_text = "STELLAR TIME",
         splash_timing = "spin",
         splash_color = {1, 1, 0.3},  -- Topaz
-        tooltip = "Starlight guide: +20% QTE time"
+        tooltip = {benefit = "+45% QTE Time", downside = "+20% Spin Cost", flavor = "A star that guides through the challenge"}
     },
     {
         id = 12,
-        name = "Diamond Shard",
+        name = "Verdant Gem",
         effects = {
-            win_multiplier = 1.25,
-            qte_target_lifetime_multiplier = 0.95,  -- Less time but bigger wins
+            win_multiplier = 1.6,  -- 60% more wins
+            qte_circle_shrink_multiplier = 1.4,  -- but circle shrinks much faster
         },
-        splash_text = "DIAMOND EDGE",
+        splash_text = "NATURE'S GIFT",
         splash_timing = "score",
         splash_color = {0.8, 1, 1},  -- Diamond
-        tooltip = "Precious: +25% wins, -5% QTE time"
+        tooltip = {benefit = "+60% Wins", downside = "+40% Circle Shrink", flavor = "A pristine stone worth any price"}
     },
     {
         id = 13,
-        name = "Opal Whisper",
+        name = "Rubbed Opal",
         effects = {
-            spin_cost_multiplier = 0.8,
-            win_multiplier = 1.08,
+            spin_cost_multiplier = 0.6,  -- 40% cheaper
+            win_multiplier = 1.25,  -- 25% more wins
+            streak_multiplier = 0.95,  -- but -5% streak
         },
         splash_text = "OPAL GRACE",
         splash_timing = "score",
         splash_color = {0.8, 0.5, 1},  -- Opal
-        tooltip = "Elegant balance: -20% spins, +8% wins"
+        tooltip = {benefit = "-40% Spins, +25% Wins", downside = "-5% Streak", flavor = "Iridescent stone reflecting every opportunity"}
     },
     {
         id = 14,
-        name = "Crystal Prism",
+        name = "Refraction Occulus",
         effects = {
-            qte_circle_shrink_multiplier = 0.8,
-            qte_target_lifetime_multiplier = 1.05,
+            qte_circle_shrink_multiplier = 0.65,  -- 35% slower shrink
+            qte_target_lifetime_multiplier = 1.2,  -- 20% more time
+            win_multiplier = 0.8,  -- but 20% less wins
         },
         splash_text = "CRYSTAL REFRACT",
         splash_timing = "qte",
         splash_color = {0.5, 1, 1},  -- Crystal
-        tooltip = "Refracted power: +5% time, -20% shrink speed"
+        tooltip = {benefit = "-35% Shrink, +20% Time", downside = "-20% Wins", flavor = "A lens that refracts fate itself"}
     },
     {
         id = 15,
-        name = "Moonstone",
+        name = "Lunar Lens",
         effects = {
-            win_multiplier = 1.12,
-            spin_cost_multiplier = 0.92,
-            streak_multiplier = 1.04,
+            win_multiplier = 1.35,  -- 35% more wins
+            spin_cost_multiplier = 0.75,  -- 25% cheaper
+            streak_multiplier = 1.15,  -- 15% more streak
+            qte_target_lifetime_multiplier = 0.85,  -- but -15% QTE time
         },
         splash_text = "LUNAR FAVOR",
         splash_timing = "score",
         splash_color = {0.8, 0.9, 1},  -- Moonstone
-        tooltip = "All-rounder: +12% wins, -8% spins, +4% streak"
+        tooltip = {benefit = "+35% Wins, -25% Spins, +15% Streak", downside = "-15% QTE Time", flavor = "The moon watches over all who spin beneath her"}
     },
     {
         id = 16,
-        name = "Black Mirror",
+        name = "Abyssal Mirror",
         effects = {
-            win_multiplier = 1.18,
-            qte_circle_shrink_multiplier = 0.88,
-            streak_multiplier = 1.06,
+            win_multiplier = 1.5,  -- 50% more wins
+            qte_circle_shrink_multiplier = 0.75,  -- 25% slower shrink
+            streak_multiplier = 1.3,  -- 30% more streak
+            spin_cost_multiplier = 1.3,  -- but 30% more expensive
         },
         splash_text = "DARK POWER",
         splash_timing = "score",
         splash_color = {0.8, 0.2, 1},  -- Purple
-        tooltip = "Dark strength: +18% wins, +6% streak, easier QTE"
+        tooltip = {benefit = "+50% Wins, +30% Streak, -25% Shrink", downside = "+30% Cost", flavor = "A reflection of the void where all bets are devoured"}
     },
 }
 
