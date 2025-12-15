@@ -199,7 +199,7 @@ function UI.drawDisplayBoxes()
     local lucky_x = Config.BUTTON_START_X
     local lucky_y = box_y
     
-    love.graphics.setColor(UIConfig.DISPLAY_BOX_COLOR)
+    love.graphics.setColor(0, 0, 0, 0)  -- Fully transparent
     love.graphics.rectangle("fill", lucky_x, lucky_y, UIConfig.LUCKY_BOX_WIDTH, UIConfig.LUCKY_BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
     
     -- Draw keepsake texture or name in lucky box

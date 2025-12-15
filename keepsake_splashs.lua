@@ -63,30 +63,42 @@ function KeepsakeSplash.draw(state)
     local progress = state.keepsake_splash_timer / state.KEEPSAKE_SPLASH_DURATION
     local alpha = progress  -- Fade out as timer decreases
     
+    -- Growth and wiggle animation
+    local scale = 1.0 + (1.0 - progress) * 0.5  -- Grows from 1.5x to 1.0x as it fades
+    local wiggle_amount = math.sin(love.timer.getTime() * 8) * (1.0 - progress) * 15  -- Wiggle decreases as it fades
+    
+    -- Rotation animation - up to 20 degrees
+    local rotation = math.sin(love.timer.getTime() * 4) * (1.0 - progress) * 20 * (math.pi / 180)  -- Convert degrees to radians
+    
     local splash_text = state.keepsake_splash_text or ""
     if splash_text == "" then return end
     
     local lucky_x = Config.BUTTON_START_X
     local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
-    local splash_y = box_y + UIConfig.LUCKY_BOX_HEIGHT / 2 - 15  -- Center over lucky box
+    local splash_y = box_y + UIConfig.LUCKY_BOX_HEIGHT / 2 - 65 + wiggle_amount  -- Center over lucky box with wiggle, moved up 50px total
     
     -- Get SlotMachine module for info_font
     local SlotMachine = require("slot_machine")
     
-    -- Draw text with color
-    love.graphics.setColor(1, 1, 1, alpha)  -- White text with fading alpha
+    -- Get keepsake color
+    local splash_color = Keepsakes.get_splash_color()
+    
     love.graphics.setFont(SlotMachine.info_font)
     local tw = SlotMachine.info_font:getWidth(splash_text)
+    local th = SlotMachine.info_font:getHeight()
     local box_center_x = lucky_x + UIConfig.LUCKY_BOX_WIDTH / 2
     
-    -- Draw semi-transparent background for readability
-    local bg_padding = 8
-    love.graphics.setColor(0, 0, 0, alpha * 0.5)
-    love.graphics.rectangle("fill", box_center_x - tw / 2 - bg_padding, splash_y - 5, tw + bg_padding * 2, 25, 3, 3)
+    -- Draw text with scale and rotation
+    love.graphics.push()
+    love.graphics.translate(box_center_x, splash_y)
+    love.graphics.scale(scale)
+    love.graphics.rotate(rotation)
     
-    -- Draw text on top
-    love.graphics.setColor(1, 1, 0, alpha)  -- Yellow text
-    love.graphics.print(splash_text, box_center_x - tw / 2, splash_y)
+    -- Draw text
+    love.graphics.setColor(splash_color[1], splash_color[2], splash_color[3], alpha)
+    love.graphics.print(splash_text, -tw / 2, -th / 2)
+    
+    love.graphics.pop()
     
     -- Reset graphics state
     love.graphics.setColor(1, 1, 1, 1)

@@ -26,6 +26,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "LUCKY BOOST",
         splash_timing = "score",  -- "spin" or "score"
+        splash_color = {1, 1, 0},  -- Yellow
         tooltip = "Increases all winnings by 10%"
     },
     {
@@ -36,6 +37,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "BARGAIN SPIN",
         splash_timing = "spin",  -- "spin" or "score"
+        splash_color = {1, 0.8, 0},  -- Gold
         tooltip = "Reduces Spin costs by 10%"
     },
     {
@@ -46,6 +48,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "MORE TIME!",
         splash_timing = "qte",
+        splash_color = {0.5, 1, 0.8},  -- Cyan
         tooltip = "Gives 10% more time in QTE"
     },
     {
@@ -56,6 +59,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "STREAK POWER",
         splash_timing = "score",
+        splash_color = {0.2, 1, 0.5},  -- Green
         tooltip = "Increases streak multiplier by 5%"
     },
     {
@@ -67,6 +71,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "BALANCED LUCK",
         splash_timing = "score",
+        splash_color = {0.8, 0.8, 1},  -- Silver
         tooltip = "Balanced boost: +5% wins, -5% spin cost"
     },
     {
@@ -77,6 +82,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "SLOWER CIRCLE",
         splash_timing = "qte",
+        splash_color = {1, 0.8, 1},  -- Pearl
         tooltip = "QTE circle shrinks 10% slower"
     },
     {
@@ -88,6 +94,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "RUBY BLESSING",
         splash_timing = "score",
+        splash_color = {1, 0.2, 0.5},  -- Ruby
         tooltip = "Strong wins: +15% winnings, +2% streak"
     },
     {
@@ -99,6 +106,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "CROWN POWER",
         splash_timing = "qte",
+        splash_color = {0.2, 0.8, 1},  -- Sapphire
         tooltip = "Master of QTE: +15% time, -15% shrink speed"
     },
     {
@@ -110,6 +118,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "EMERALD FAVOR",
         splash_timing = "score",
+        splash_color = {0.2, 1, 0.5},  -- Emerald
         tooltip = "Budget streaker: -15% spins, +3% streak"
     },
     {
@@ -121,6 +130,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "LUCKY PAW",
         splash_timing = "score",
+        splash_color = {1, 0.6, 0.2},  -- Orange
         tooltip = "High risk, high reward: +20% wins, +5% spin cost"
     },
     {
@@ -131,6 +141,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "STELLAR TIME",
         splash_timing = "spin",
+        splash_color = {1, 1, 0.3},  -- Topaz
         tooltip = "Starlight guide: +20% QTE time"
     },
     {
@@ -142,6 +153,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "DIAMOND EDGE",
         splash_timing = "score",
+        splash_color = {0.8, 1, 1},  -- Diamond
         tooltip = "Precious: +25% wins, -5% QTE time"
     },
     {
@@ -153,6 +165,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "OPAL GRACE",
         splash_timing = "score",
+        splash_color = {0.8, 0.5, 1},  -- Opal
         tooltip = "Elegant balance: -20% spins, +8% wins"
     },
     {
@@ -164,6 +177,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "CRYSTAL REFRACT",
         splash_timing = "qte",
+        splash_color = {0.5, 1, 1},  -- Crystal
         tooltip = "Refracted power: +5% time, -20% shrink speed"
     },
     {
@@ -176,6 +190,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "LUNAR FAVOR",
         splash_timing = "score",
+        splash_color = {0.8, 0.9, 1},  -- Moonstone
         tooltip = "All-rounder: +12% wins, -8% spins, +4% streak"
     },
     {
@@ -188,6 +203,7 @@ local KEEPSAKE_DEFINITIONS = {
         },
         splash_text = "DARK POWER",
         splash_timing = "score",
+        splash_color = {0.8, 0.2, 1},  -- Purple
         tooltip = "Dark strength: +18% wins, +6% streak, easier QTE"
     },
 }
@@ -288,6 +304,13 @@ function Keepsakes.get_splash_timing()
     if not selected_keepsake then return nil end
     local def = KEEPSAKE_DEFINITIONS[selected_keepsake]
     return def and def.splash_timing or nil
+end
+
+-- Get splash color for selected keepsake
+function Keepsakes.get_splash_color()
+    if not selected_keepsake then return {1, 1, 1} end
+    local def = KEEPSAKE_DEFINITIONS[selected_keepsake]
+    return def and def.splash_color or {1, 1, 1}
 end
 
 -- Reset selection
