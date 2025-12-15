@@ -16,35 +16,47 @@ local GRID_ROWS = 4
 local GRID_SIZE = GRID_COLS * GRID_ROWS -- 16 keepsakes
 
 -- Define all keepsakes with their modifiers
--- Organize each keepsake as a table with id, name, and effects
+-- Organize each keepsake as a table with id, name, effects, and splash info
 local KEEPSAKE_DEFINITIONS = {
     {
         id = 1,
         name = "Lucky Coin",
         effects = {
             win_multiplier = 1.1,  -- 10% more winnings
-        }
+        },
+        splash_text = "LUCKY BOOST",
+        splash_timing = "score",  -- "spin" or "score"
+        tooltip = "Increases all winnings by 10%"
     },
     {
         id = 2,
         name = "Golden Bell",
         effects = {
             spin_cost_multiplier = 0.9,  -- 10% cheaper spins
-        }
+        },
+        splash_text = "BARGAIN SPIN",
+        splash_timing = "spin",  -- "spin" or "score"
+        tooltip = "Reduces Spin costs by 10%"
     },
     {
         id = 3,
         name = "Fortune Stone",
         effects = {
             qte_target_lifetime_multiplier = 1.1,  -- 10% more time for QTE
-        }
+        },
+        splash_text = "MORE TIME!",
+        splash_timing = "qte",
+        tooltip = "Gives 10% more time in QTE"
     },
     {
         id = 4,
         name = "Jade Token",
         effects = {
             streak_multiplier = 1.05,  -- 5% more streak bonus
-        }
+        },
+        splash_text = "STREAK POWER",
+        splash_timing = "score",
+        tooltip = "Increases streak multiplier by 5%"
     },
     {
         id = 5,
@@ -52,14 +64,20 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             win_multiplier = 1.05,
             spin_cost_multiplier = 0.95,
-        }
+        },
+        splash_text = "BALANCED LUCK",
+        splash_timing = "score",
+        tooltip = "Balanced boost: +5% wins, -5% spin cost"
     },
     {
         id = 6,
         name = "Pearl Charm",
         effects = {
             qte_circle_shrink_multiplier = 0.9,  -- Slower shrink
-        }
+        },
+        splash_text = "SLOWER CIRCLE",
+        splash_timing = "qte",
+        tooltip = "QTE circle shrinks 10% slower"
     },
     {
         id = 7,
@@ -67,7 +85,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             win_multiplier = 1.15,
             streak_multiplier = 1.02,
-        }
+        },
+        splash_text = "RUBY BLESSING",
+        splash_timing = "score",
+        tooltip = "Strong wins: +15% winnings, +2% streak"
     },
     {
         id = 8,
@@ -75,7 +96,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             qte_target_lifetime_multiplier = 1.15,
             qte_circle_shrink_multiplier = 0.85,
-        }
+        },
+        splash_text = "CROWN POWER",
+        splash_timing = "qte",
+        tooltip = "Master of QTE: +15% time, -15% shrink speed"
     },
     {
         id = 9,
@@ -83,7 +107,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             spin_cost_multiplier = 0.85,
             streak_multiplier = 1.03,
-        }
+        },
+        splash_text = "EMERALD FAVOR",
+        splash_timing = "score",
+        tooltip = "Budget streaker: -15% spins, +3% streak"
     },
     {
         id = 10,
@@ -91,14 +118,20 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             win_multiplier = 1.2,
             spin_cost_multiplier = 1.05,  -- Slightly more expensive but bigger wins
-        }
+        },
+        splash_text = "LUCKY PAW",
+        splash_timing = "score",
+        tooltip = "High risk, high reward: +20% wins, +5% spin cost"
     },
     {
         id = 11,
         name = "Topaz Star",
         effects = {
             qte_target_lifetime_multiplier = 1.2,
-        }
+        },
+        splash_text = "STELLAR TIME",
+        splash_timing = "spin",
+        tooltip = "Starlight guide: +20% QTE time"
     },
     {
         id = 12,
@@ -106,7 +139,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             win_multiplier = 1.25,
             qte_target_lifetime_multiplier = 0.95,  -- Less time but bigger wins
-        }
+        },
+        splash_text = "DIAMOND EDGE",
+        splash_timing = "score",
+        tooltip = "Precious: +25% wins, -5% QTE time"
     },
     {
         id = 13,
@@ -114,7 +150,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             spin_cost_multiplier = 0.8,
             win_multiplier = 1.08,
-        }
+        },
+        splash_text = "OPAL GRACE",
+        splash_timing = "score",
+        tooltip = "Elegant balance: -20% spins, +8% wins"
     },
     {
         id = 14,
@@ -122,7 +161,10 @@ local KEEPSAKE_DEFINITIONS = {
         effects = {
             qte_circle_shrink_multiplier = 0.8,
             qte_target_lifetime_multiplier = 1.05,
-        }
+        },
+        splash_text = "CRYSTAL REFRACT",
+        splash_timing = "qte",
+        tooltip = "Refracted power: +5% time, -20% shrink speed"
     },
     {
         id = 15,
@@ -131,7 +173,10 @@ local KEEPSAKE_DEFINITIONS = {
             win_multiplier = 1.12,
             spin_cost_multiplier = 0.92,
             streak_multiplier = 1.04,
-        }
+        },
+        splash_text = "LUNAR FAVOR",
+        splash_timing = "score",
+        tooltip = "All-rounder: +12% wins, -8% spins, +4% streak"
     },
     {
         id = 16,
@@ -140,7 +185,10 @@ local KEEPSAKE_DEFINITIONS = {
             win_multiplier = 1.18,
             qte_circle_shrink_multiplier = 0.88,
             streak_multiplier = 1.06,
-        }
+        },
+        splash_text = "DARK POWER",
+        splash_timing = "score",
+        tooltip = "Dark strength: +18% wins, +6% streak, easier QTE"
     },
 }
 
@@ -226,6 +274,20 @@ function Keepsakes.get_name()
     if not selected_keepsake then return "None" end
     local def = KEEPSAKE_DEFINITIONS[selected_keepsake]
     return def and def.name or "Unknown"
+end
+
+-- Get splash text for selected keepsake
+function Keepsakes.get_splash_text()
+    if not selected_keepsake then return "" end
+    local def = KEEPSAKE_DEFINITIONS[selected_keepsake]
+    return def and def.splash_text or ""
+end
+
+-- Get splash timing for selected keepsake ("spin" or "score")
+function Keepsakes.get_splash_timing()
+    if not selected_keepsake then return nil end
+    local def = KEEPSAKE_DEFINITIONS[selected_keepsake]
+    return def and def.splash_timing or nil
 end
 
 -- Reset selection

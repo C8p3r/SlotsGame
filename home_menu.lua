@@ -244,18 +244,21 @@ function HomeMenu.draw_keepsake_tooltip(hovered_id)
     local effects_font = love.graphics.newFont("splashfont.otf", 11)
     love.graphics.setFont(effects_font)
     
-    local effects_text = ""
-    if def.effects.win_multiplier and def.effects.win_multiplier ~= 1.0 then
-        local pct = math.floor((def.effects.win_multiplier - 1.0) * 100)
-        effects_text = effects_text .. "Winnings: " .. (pct > 0 and "+" or "") .. pct .. "%\n"
-    end
-    if def.effects.spin_cost_multiplier and def.effects.spin_cost_multiplier ~= 1.0 then
-        local pct = math.floor((1.0 - def.effects.spin_cost_multiplier) * 100)
-        effects_text = effects_text .. "Spin Cost: " .. (pct > 0 and "-" or "") .. pct .. "%\n"
-    end
-    if def.effects.streak_multiplier and def.effects.streak_multiplier ~= 1.0 then
-        local pct = math.floor((def.effects.streak_multiplier - 1.0) * 100)
-        effects_text = effects_text .. "Streak: " .. (pct > 0 and "+" or "") .. pct .. "%"
+    -- Use custom tooltip if available, otherwise generate from effects
+    local effects_text = def.tooltip or ""
+    if effects_text == "" then
+        if def.effects.win_multiplier and def.effects.win_multiplier ~= 1.0 then
+            local pct = math.floor((def.effects.win_multiplier - 1.0) * 100)
+            effects_text = effects_text .. "Winnings: " .. (pct > 0 and "+" or "") .. pct .. "%\n"
+        end
+        if def.effects.spin_cost_multiplier and def.effects.spin_cost_multiplier ~= 1.0 then
+            local pct = math.floor((1.0 - def.effects.spin_cost_multiplier) * 100)
+            effects_text = effects_text .. "Spin Cost: " .. (pct > 0 and "-" or "") .. pct .. "%\n"
+        end
+        if def.effects.streak_multiplier and def.effects.streak_multiplier ~= 1.0 then
+            local pct = math.floor((def.effects.streak_multiplier - 1.0) * 100)
+            effects_text = effects_text .. "Streak: " .. (pct > 0 and "+" or "") .. pct .. "%"
+        end
     end
     
     if effects_text == "" then

@@ -7,6 +7,51 @@ local Slots = nil -- Reference injected by setSlotMachineModule
 function SlotUpdate.update(dt, state)
     if not state then return end
 
+    -- *** STATE TRANSITION DETECTION ***
+    -- Detect transition into spinning state
+    if state.is_spinning and not state.previous_is_spinning then
+        local Keepsakes = require("keepsakes")
+        local keepsake_id = Keepsakes.get()
+        if keepsake_id then
+            local def = Keepsakes.get_definition(keepsake_id)
+            if def and def.splash_timing == "spin" then
+                -- Trigger splash directly
+                local custom_splash_text = Keepsakes.get_splash_text()
+                local splash_timing = Keepsakes.get_splash_timing()
+                
+                local effect_text = custom_splash_text and custom_splash_text ~= "" and custom_splash_text or "SPIN!"
+                
+                state.keepsake_splash_text = effect_text
+                state.keepsake_splash_timing = splash_timing
+                state.keepsake_splash_timer = state.KEEPSAKE_SPLASH_DURATION
+            end
+        end
+    end
+    
+    -- Detect transition into QTE state
+    if state.qte and state.qte.active and not state.previous_qte_active then
+        local Keepsakes = require("keepsakes")
+        local keepsake_id = Keepsakes.get()
+        if keepsake_id then
+            local def = Keepsakes.get_definition(keepsake_id)
+            if def and def.splash_timing == "qte" then
+                -- Trigger splash directly
+                local custom_splash_text = Keepsakes.get_splash_text()
+                local splash_timing = Keepsakes.get_splash_timing()
+                
+                local effect_text = custom_splash_text and custom_splash_text ~= "" and custom_splash_text or "QTE!"
+                
+                state.keepsake_splash_text = effect_text
+                state.keepsake_splash_timing = splash_timing
+                state.keepsake_splash_timer = state.KEEPSAKE_SPLASH_DURATION
+            end
+        end
+    end
+    
+    -- Update previous state tracking
+    state.previous_is_spinning = state.is_spinning
+    state.previous_qte_active = state.qte and state.qte.active or false
+
     if (state.win_flash_timer or 0) > 0 then 
         state.win_flash_timer = state.win_flash_timer - dt 
     end

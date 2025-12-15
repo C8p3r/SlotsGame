@@ -241,28 +241,6 @@ function UI.drawDisplayBoxes()
     end
 end
 
--- Draw keepsake effect splash above the lucky box
-function UI.drawKeepsakeSplash(state)
-    if not state or (state.keepsake_splash_timer or 0) <= 0 then return end
-    
-    local Keepsakes = require("keepsakes")
-    local keepsake_id = Keepsakes.get()
-    if not keepsake_id then return end
-    
-    local progress = state.keepsake_splash_timer / state.KEEPSAKE_SPLASH_DURATION
-    local alpha = progress  -- Fade out as timer decreases
-    
-    local splash_text = state.keepsake_splash_text or ""
-    local lucky_x = Config.BUTTON_START_X
-    local lucky_y = Config.PERCENT_BOX_Y  -- Position above lucky box
-    local splash_y = lucky_y - 50
-    
-    love.graphics.setColor(state.keepsake_splash_color[1], state.keepsake_splash_color[2], state.keepsake_splash_color[3], alpha)
-    love.graphics.setFont(SlotMachine.info_font)
-    local tw = SlotMachine.info_font:getWidth(splash_text)
-    local box_center_x = lucky_x + UIConfig.LUCKY_BOX_WIDTH / 2
-    love.graphics.print(splash_text, box_center_x - tw / 2, splash_y)
-end
 
 function UI.drawBottomOverlays()
     -- Two opaque black boxes at the bottom

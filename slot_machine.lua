@@ -6,6 +6,7 @@ local SlotDraw = require("slot_draw")
 local SlotUpdate = require("slot_update") 
 local SlotBorders = require("slot_borders")
 local SlotSmoke = require("slot_smoke")
+local SlotQTE = require("slot_QTE")
 local BackgroundRenderer = require("background_renderer")
 local Difficulty = require("difficulty")
 
@@ -102,7 +103,12 @@ local state = {
     keepsake_splash_timer = 0.0,
     keepsake_splash_text = "",
     keepsake_splash_color = {0.2, 1.0, 0.8},
+    keepsake_splash_timing = nil,  -- "spin" or "score"
     KEEPSAKE_SPLASH_DURATION = 1.2,
+    
+    -- State Transition Tracking
+    previous_is_spinning = false,
+    previous_qte_active = false,
     
     Dialogue = Dialogue,
 }
@@ -127,6 +133,11 @@ local function calculate_bet_amount()
     local percent_component = math.floor(min_bankroll_for_calc * state.bet_percent)
     
     local calculated_bet = flat_component + percent_component
+    
+    -- Apply keepsake spin cost multiplier
+    local Keepsakes = require("keepsakes")
+    local spin_cost_mult = Keepsakes.get_effect("spin_cost_multiplier")
+    calculated_bet = math.floor(calculated_bet * spin_cost_mult)
     
     if state.bankroll > 0 and calculated_bet < 1 then
         return 1
@@ -163,25 +174,10 @@ function SlotMachine.get_wiggle_modifiers()
 end
 
 -- Trigger keepsake effect splash
+-- Trigger keepsake splash (delegates to KeepsakeSplash module)
 function SlotMachine.trigger_keepsake_splash(effect_type, effect_value)
-    local effect_text = ""
-    if effect_type == "win_multiplier" then
-        effect_text = string.format("KEEPSAKE +%.0f%%", (effect_value - 1.0) * 100)
-    elseif effect_type == "spin_cost_multiplier" then
-        local reduction = (1.0 - effect_value) * 100
-        effect_text = string.format("KEEPSAKE -%.0f%%", reduction)
-    elseif effect_type == "streak_multiplier" then
-        effect_text = string.format("KEEPSAKE +%.0f%% STREAK", (effect_value - 1.0) * 100)
-    elseif effect_type == "qte_target_lifetime_multiplier" then
-        effect_text = string.format("KEEPSAKE +%.0f%% TIME", (effect_value - 1.0) * 100)
-    elseif effect_type == "qte_circle_shrink_multiplier" then
-        effect_text = string.format("KEEPSAKE SLOWER SHRINK")
-    else
-        effect_text = "KEEPSAKE ACTIVE"
-    end
-    
-    state.keepsake_splash_text = effect_text
-    state.keepsake_splash_timer = state.KEEPSAKE_SPLASH_DURATION
+    local KeepsakeSplash = require("keepsake_splashs")
+    KeepsakeSplash.trigger(state, effect_type, effect_value)
 end
 
 function SlotMachine.calculate_symbol_y(slot_index, iterator_index)
@@ -326,6 +322,9 @@ function SlotMachine.load()
     state.dialogue_font = love.graphics.newFont(font_file, Config.DIALOGUE_FONT_SIZE)
     state.result_font = love.graphics.newFont(font_file, Config.RESULT_FONT_SIZE)
     state.splash_font = state.result_font 
+    
+    -- Initialize QTE state
+    SlotQTE.init(state)
     
     local function load_s(filename)
         local ok, s = pcall(love.graphics.newShader, filename)

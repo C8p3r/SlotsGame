@@ -1,6 +1,7 @@
 -- slot_logic.lua
 local Config = require("conf")
 local Difficulty = require("difficulty")
+local SlotQTE = require("slot_QTE")
 
 local SlotLogic = {} 
 local Slots = nil -- Reference injected by setSlotMachineModule
@@ -133,10 +134,33 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
 
     state.bankroll = state.bankroll + final_win_amount
     
+    -- Trigger keepsake splashes for win-modifying effects
+    if is_win and initial_win_amount > 0 then
+        local Keepsakes = require("keepsakes")
+        local keepsake_id = Keepsakes.get()
+        if keepsake_id then
+            local def = Keepsakes.get_definition(keepsake_id)
+            local SlotMachine = require("slot_machine")
+            
+            -- Trigger win_multiplier splash if applicable
+            if def.effects.win_multiplier and def.splash_timing == "score" then
+                SlotMachine.trigger_keepsake_splash("win_multiplier", def.effects.win_multiplier)
+            end
+            
+            -- Trigger streak_multiplier splash if applicable
+            if def.effects.streak_multiplier and def.splash_timing == "score" and streak_context > 0 then
+                SlotMachine.trigger_keepsake_splash("streak_multiplier", def.effects.streak_multiplier)
+            end
+        end
+    end
+    
     -- *** QTE CHECK ***
     if was_blocked == nil and is_win == false and streak_context >= 2 then 
         state.block_game_active = true
         state.qte_targets = {}
+        
+        -- Trigger QTE state
+        SlotQTE.trigger(state)
         
         local targets_to_spawn = 3 
         if streak_context > 10 then

@@ -203,7 +203,8 @@ function love.draw()
         UI.drawDisplayBoxes()
         UI.drawBottomOverlays()
         local state = Slots.getState()
-        UI.drawKeepsakeSplash(state)
+        local KeepsakeSplash = require("keepsake_splashs")
+        KeepsakeSplash.draw(state)
     end
     
     if game_state == "MENU" then
