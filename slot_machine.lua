@@ -110,6 +110,10 @@ local state = {
     previous_is_spinning = false,
     previous_qte_active = false,
     
+    -- Callbacks
+    spin_complete_callback = nil,  -- Called when a spin result is finalized
+    spin_start_callback = nil,  -- Called when a spin begins
+    
     Dialogue = Dialogue,
 }
 
@@ -247,6 +251,65 @@ function SlotMachine.getState()
     return state
 end
 
+function SlotMachine.reset_state()
+    -- Reset gambling state
+    state.bankroll = Config.INITIAL_BANKROLL
+    state.spin_count = 0
+    state.consecutive_wins = 0
+    state.high_streak = 0
+    state.last_win_amount = 0
+    state.current_bet_amount = Config.FLAT_INCREMENT
+    
+    -- Reset machine state
+    state.is_spinning = false
+    state.spin_timer = 0
+    state.spin_delay_timer = 0.0
+    
+    -- Reset UI/Animation state
+    state.display_payout_string = ""
+    state.display_payout_color = {1, 1, 1}
+    state.winning_indices = {}
+    state.strobe_timer = 0.0
+    state.win_flash_timer = 0
+    state.message = ""
+    
+    -- Reset multipliers
+    state.current_spin_multiplier = 0.0
+    state.multiplier_splash_timer = 0.0
+    
+    -- Reset wiggle state
+    state.current_wiggle_speed_mod = 1.0
+    state.current_wiggle_range_mod = 1.0
+    
+    -- Reset splash state
+    state.splash_timer = 0.0
+    state.splash_text = ""
+    state.splash_color = {1, 1, 1}
+    state.streak_splash_timer = 0.0
+    state.streak_splash_text = ""
+    state.streak_splash_color = {0, 1, 1}
+    state.break_splash_timer = 0.0
+    state.break_splash_text = ""
+    state.break_splash_color = {1.0, 0.2, 0.2}
+    state.jam_duration_timer = 0.0
+    state.jam_splash_timer = 0.0
+    
+    -- Reset QTE state
+    state.block_game_active = false
+    state.block_game_timer = 0.0
+    state.qte_targets = {}
+    state.block_splash_timer = 0.0
+    
+    -- Reset auto-spin state
+    state.auto_spin_timer = 0.0
+    
+    -- Reset keepsake splash state
+    state.keepsake_splash_timer = 0
+    state.keepsake_splash_text = ""
+    
+    print("[SLOT_MACHINE] Game state reset")
+end
+
 function SlotMachine.is_spinning() return state.is_spinning end
 function SlotMachine.is_jammed() return state.jam_duration_timer > 0 end
 function SlotMachine.is_block_game_active() return state.block_game_active end
@@ -375,6 +438,17 @@ end
 function SlotMachine.start_spin()
     if state.is_spinning or state.block_game_active then return end
     
+    -- Call spin start callback if set
+    if state.spin_start_callback then
+        print("[START_SPIN] Calling spin_start_callback")
+        state.spin_start_callback()
+        print("[START_SPIN] spin_start_callback completed")
+        state.spin_start_callback = nil  -- Clear callback after use
+        print("[START_SPIN] spin_start_callback cleared")
+    else
+        print("[START_SPIN] WARNING: spin_start_callback is nil!")
+    end
+    
     local bet_to_place = calculate_bet_amount()
     
     state.current_bet_amount = bet_to_place 
@@ -437,6 +511,20 @@ function SlotMachine.resolve_spin_result(was_blocked)
     end
     -- Update background hue based on streak
     BackgroundRenderer.setStreakHue(state.consecutive_wins)
+    
+    -- Call spin completion callback if set
+    if state.spin_complete_callback then
+        state.spin_complete_callback()
+        state.spin_complete_callback = nil
+    end
+end
+
+function SlotMachine.set_spin_complete_callback(callback)
+    state.spin_complete_callback = callback
+end
+
+function SlotMachine.set_spin_start_callback(callback)
+    state.spin_start_callback = callback
 end
 
 function SlotMachine.keypressed(key)

@@ -5,8 +5,35 @@
 local Config = require("conf")
 local UIConfig = require("ui/ui_config")
 local SlotMachine = require("slot_machine")
+local Shop = require("ui/shop")
 
 local UI = {}
+
+-- UI Assets
+local ui_assets_spritesheet = nil
+local ui_assets_quads = {}  -- Store quads for 4x4 grid
+
+-- Load UI assets on initialization
+local function load_ui_assets()
+    local ok, img = pcall(love.graphics.newImage, "assets/UI_assets.png")
+    if ok then
+        ui_assets_spritesheet = img
+        -- Set filter to nearest for pixel-perfect rendering
+        ui_assets_spritesheet:setFilter("nearest", "nearest")
+        -- Create quads for 4x4 grid (128x128 px / 4 = 32x32 px per sprite)
+        local sprite_size = 32
+        local cols = 4
+        local rows = 4
+        for row = 0, rows - 1 do
+            for col = 0, cols - 1 do
+                local quad_index = row * cols + col + 1
+                ui_assets_quads[quad_index] = love.graphics.newQuad(col * sprite_size, row * sprite_size, sprite_size, sprite_size, img:getDimensions())
+            end
+        end
+    else
+        print("Warning: Could not load UI_assets.png")
+    end
+end
 
 -- ============================================================================
 -- HELPER FUNCTIONS
@@ -20,6 +47,20 @@ local function format_large_number(num)
         return string.format("%.0f", num)
     end
 end
+
+-- ============================================================================
+-- TOKEN ANIMATION STATE
+-- ============================================================================
+
+local departing_tokens = {}  -- Table to track tokens leaving the screen
+local arriving_tokens = {}  -- Table to track tokens arriving on screen
+local prev_spins_remaining = 0
+local token_oscillation_time = 0  -- Time accumulator for oscillation animation
+local last_token_x = 0  -- Store position of last token for departing animation
+local last_token_y = 0  -- Store position of last token for departing animation
+local gauge_display_progress = 0  -- Twitchy gauge needle position
+local gauge_twitch_timer = 0  -- Timer for gauge twitches
+local sprite_animation_time = 0  -- Time accumulator for sprite grow/shrink animation
 
 -- ============================================================================
 -- INDICATOR BOXES (BET, SPIN MULTIPLIER, STREAK MULTIPLIER)
@@ -118,60 +159,7 @@ end
 -- ============================================================================
 
 function UI.drawButtons(state, Slots, active_button_index, draw_wavy_text, get_wiggle_modifiers)
-    local button_font = love.graphics.getFont()
-    local symbol_font = love.graphics.newFont(UIConfig.FONT_FILE, UIConfig.SYMBOL_FONT_SIZE)
-    
-    local button_defs = {
-        {y_offset = 15, type = "FLAT", symbol = "$", increment_text = "+100"},
-        {y_offset = Config.BUTTON_HEIGHT + Config.BUTTON_GAP - 5, type = "PERCENT", symbol = "%", increment_text = "+0.5%"},
-    }
-    
-    local bx = Config.BUTTON_START_X
-    local current_flat_bet = Slots.getFlatBetBase()
-    local current_pct = Slots.getBetPercent()
-    
-    for i, def in ipairs(button_defs) do
-        local by = Config.BUTTON_START_Y + def.y_offset + UIConfig.BUTTON_Y_OFFSET
-        local color = Config.BUTTON_COLORS[def.type]
-        local border_color = Config.BUTTON_BORDER_COLORS[def.type]
-        
-        local offset = 0
-        if active_button_index == i then
-            offset = UIConfig.BUTTON_ANIMATION_DEPTH
-        end
-        
-        love.graphics.push()
-        
-        -- Button Face
-        love.graphics.setColor(color)
-        love.graphics.rectangle("fill", bx, by + offset, Config.BUTTON_WIDTH, UIConfig.BUTTON_HEIGHT_ADJUSTED, UIConfig.BUTTON_CORNER_RADIUS)
-        
-        -- Border
-        love.graphics.setColor(border_color)
-        love.graphics.setLineWidth(UIConfig.BUTTON_BORDER_WIDTH)
-        love.graphics.rectangle("line", bx, by + offset, Config.BUTTON_WIDTH, UIConfig.BUTTON_HEIGHT_ADJUSTED, UIConfig.BUTTON_CORNER_RADIUS)
-        love.graphics.setLineWidth(UIConfig.BUTTON_LINE_WIDTH_DEFAULT)
-        
-        -- Combined text: +Symbol+Amount on one line
-        love.graphics.setFont(button_font)
-        local symbol = def.symbol
-        local increment_amount = def.increment_text:sub(2)  -- Remove the + from increment_text
-        -- Remove % if present in increment_amount
-        if increment_amount:sub(-1) == "%" then
-            increment_amount = increment_amount:sub(1, -2)
-        end
-        local combined_text = "^ " .. symbol .. increment_amount
-        
-        love.graphics.setColor(UIConfig.TEXT_WHITE)
-        local ctw = button_font:getWidth(combined_text)
-        local scale = UIConfig.BUTTON_TEXT_SCALE
-        if ctw > (Config.BUTTON_WIDTH - 10) then
-            scale = (Config.BUTTON_WIDTH - 10) / ctw
-        end
-        draw_wavy_text(combined_text, bx + Config.BUTTON_WIDTH / 2 - (ctw * scale) / 2, by + UIConfig.BUTTON_HEIGHT_ADJUSTED / 2 + UIConfig.BUTTON_TEXT_OFFSET_Y + offset, button_font, UIConfig.TEXT_WHITE, 260 + i * 5, scale, get_wiggle_modifiers)
-        
-        love.graphics.pop()
-    end
+    -- Buttons removed - gem counter now in their place
 end
 
 -- ============================================================================
@@ -242,7 +230,12 @@ function UI.drawDisplayBoxes()
 end
 
 
-function UI.drawBottomOverlays()
+function UI.drawBottomOverlays(state)
+    -- Load UI assets if not already loaded
+    if not ui_assets_spritesheet then
+        load_ui_assets()
+    end
+    
     -- Two opaque black boxes at the bottom
     local BOX_WIDTH = Config.SLOT_WIDTH
     local BOX_GAP = Config.SLOT_GAP
@@ -258,17 +251,206 @@ function UI.drawBottomOverlays()
     local box_height = bal_box_bottom - slot_bottom + 15
     
     if box_height > 0 then
-        -- Left box (spin#)
+        -- Left box (spin chips display)
         local left_box_width = bottom_box_width / 2 - UIConfig.BOTTOM_BOX_GAP - UIConfig.BOTTOM_BOX_LEFT_OFFSET
         local left_box_x_pos = left_box_x + UIConfig.BOTTOM_BOX_LEFT_OFFSET
         love.graphics.setColor(UIConfig.BOX_BACKGROUND_COLOR)
         love.graphics.rectangle("fill", left_box_x_pos, slot_bottom, left_box_width, box_height, UIConfig.BOX_CORNER_RADIUS)
         
-        -- Right box (threshold)
+        -- ================================================================
+        -- SPIN CHIPS FEATURE: Display remaining spins as a horizontal line
+        -- ================================================================
+        if ui_assets_spritesheet and ui_assets_quads[5] then
+            love.graphics.setColor(1, 1, 1, 1)
+            local spins_remaining = Shop.get_spins_remaining()
+            local base_token_size = 32  -- Original sprite size
+            local scale = 2  -- 2x scale for bigger tokens
+            local token_size = base_token_size * scale  -- 64 pixels when drawn
+            local chip_spacing = -52  -- Tight packing with significant overlap
+            local padding_top = (box_height - token_size) / 2  -- Vertically center
+            
+            -- Calculate position of first chip (left-aligned with padding, moved left 10px)
+            local chip_x = left_box_x_pos  -- Moved left 10px (was +10)
+            local chip_y = slot_bottom + padding_top
+            
+            -- Track last token position for departing animation (store globally for update function)
+            last_token_x = chip_x
+            last_token_y = chip_y
+            
+            -- Draw chips in a single horizontal line
+            for i = 1, spins_remaining do
+                -- Skip chips that are currently arriving (they're drawn separately)
+                local is_arriving = false
+                for _, arriving_token in ipairs(arriving_tokens) do
+                    if arriving_token.slot_index == i then
+                        is_arriving = true
+                        break
+                    end
+                end
+                
+                if not is_arriving then
+                    local current_chip_x = chip_x + (i - 1) * (token_size + chip_spacing)
+                    local current_chip_y = chip_y
+                    
+                    -- Apply individual oscillation animation to each chip with phase offset
+                    local phase_offset = i * 0.2  -- Each chip has a different phase offset
+                    local oscillation = math.sin(token_oscillation_time * 4 + phase_offset) * 2  -- Oscillates 2 pixels up and down (tighter)
+                    current_chip_y = current_chip_y + oscillation
+                    
+                    love.graphics.draw(ui_assets_spritesheet, ui_assets_quads[5], current_chip_x, current_chip_y, 0, scale, scale)
+                    
+                    -- Update last token position (for animation starting point)
+                    last_token_x = current_chip_x
+                    last_token_y = current_chip_y
+                end
+            end
+            
+            -- Draw departing tokens with animation
+            for _, token in ipairs(departing_tokens) do
+                -- Draw token (no fade, it just falls off screen)
+                love.graphics.setColor(1, 1, 1, 1)
+                love.graphics.draw(ui_assets_spritesheet, ui_assets_quads[5], token.x - 32, token.y - 32, 0, scale, scale)
+            end
+            
+            -- Draw arriving tokens with animation
+            for _, token in ipairs(arriving_tokens) do
+                local adjusted_lifetime = math.max(0, token.lifetime - token.delay)
+                if adjusted_lifetime > 0 then
+                    local progress = adjusted_lifetime / token.max_lifetime
+                    local arrival_x = chip_x + (token.slot_index - 1) * (token_size + chip_spacing)
+                    local arrival_y = chip_y
+                    
+                    -- Animate from bottom up to final position
+                    local start_y = arrival_y + 150  -- Start 150 pixels below
+                    local current_y = start_y - (progress * 150)  -- Slide up
+                    local alpha = math.min(progress * 2, 1)  -- Fade in quickly
+                    
+                    love.graphics.setColor(1, 1, 1, alpha)
+                    love.graphics.draw(ui_assets_spritesheet, ui_assets_quads[5], arrival_x, current_y, 0, scale, scale)
+                end
+            end
+        end
+        
+        -- Right box (balance goal progress gauge)
         local right_box_x = left_box_x + bottom_box_width / 2 + UIConfig.BOTTOM_BOX_GAP
         local right_box_width = bottom_box_width / 2 - UIConfig.BOTTOM_BOX_GAP
         love.graphics.setColor(UIConfig.BOX_BACKGROUND_COLOR)
         love.graphics.rectangle("fill", right_box_x, slot_bottom, right_box_width, box_height, UIConfig.BOX_CORNER_RADIUS)
+        
+        -- Draw balance goal progress gauge (thermometer style, horizontal)
+        local current_balance = state.bankroll or 0
+        local goal_balance = Shop.get_balance_goal()
+        local actual_progress = math.min(1.0, current_balance / goal_balance)
+        
+        -- Thermometer dimensions (horizontal without bulb, 50px smaller from right)
+        local thermo_padding = 15
+        local thermo_x = right_box_x + thermo_padding
+        local thermo_y = slot_bottom + box_height / 2 - 18
+        local thermo_width = right_box_width - (thermo_padding * 2) - 50  -- 50px smaller from right
+        local thermo_height = 36
+        local tube_x = thermo_x
+        local tube_width = thermo_width
+        
+        -- Background (empty thermometer tube)
+        love.graphics.setColor(0.15, 0.15, 0.15, 0.9)
+        love.graphics.rectangle("fill", tube_x, thermo_y, tube_width, thermo_height, 5)
+        
+        -- Needle position with twitchiness and sporadic jumps
+        local needle_x = tube_x + (tube_width * gauge_display_progress)
+        local needle_height = thermo_height + 10
+        
+        -- Draw colored fill behind needle (red to blue)
+        local color_r = 1.0 - (gauge_display_progress * 0.8)
+        local color_g = 0.0
+        local color_b = gauge_display_progress * 0.8
+        love.graphics.setColor(color_r, color_g, color_b, 0.6)
+        love.graphics.rectangle("fill", tube_x, thermo_y, tube_width * gauge_display_progress, thermo_height, 5)
+        
+        -- Draw lightning effect from left edge to needle (multiple rows)
+        local time = love.timer.getTime() * 8.0
+        local p1_x = tube_x
+        local p2_x = needle_x
+        
+        -- Draw three rows of lightning: above, center, below
+        local lightning_rows = {
+            {y_offset = -8, amplitude = 0.15},   -- Above (smaller amplitude)
+            {y_offset = -5, amplitude = 0.25},   -- Center (original)
+            {y_offset = 3, amplitude = 0.15}     -- Below (smaller amplitude)
+        }
+        
+        for _, row in ipairs(lightning_rows) do
+            local p1_y = thermo_y + thermo_height / 2 + row.y_offset
+            local p2_y = thermo_y + thermo_height / 2 + row.y_offset
+            
+            local dx = p2_x - p1_x
+            local dy = p2_y - p1_y
+            local len = math.sqrt(dx*dx + dy*dy)
+            
+            if len > 1 then
+                local points = {}
+                table.insert(points, p1_x)
+                table.insert(points, p1_y)
+                
+                local nx = -dy / len
+                local ny = dx / len
+                
+                local num_bolt_segments = 20
+                for i = 1, num_bolt_segments do
+                    local t = i / num_bolt_segments
+                    local current_x = p1_x + dx * t
+                    local current_y = p1_y + dy * t
+                    local jitter = (math.sin(time + i * 2.0) + love.math.random() * 2.0) * (thermo_height * row.amplitude) * 0.5
+                    current_x = current_x + nx * jitter
+                    current_y = current_y + ny * jitter
+                    table.insert(points, current_x)
+                    table.insert(points, current_y)
+                end
+                
+                -- Draw multiple lightning arcs for intense effect with color based on gauge progress
+                for arc = 1, 10 do
+                    local arc_width = 4 - arc * 0.6
+                    local alpha = (0.8 + love.math.random() * 0.2) / (arc * 0.5)
+                    
+                    love.graphics.setLineWidth(arc_width)
+                    
+                    -- Color shifts from yellow to cyan based on gauge progress
+                    local gauge_progress = gauge_display_progress  -- 0 to 1
+                    local r = 1.0 * (1.0 - gauge_progress)  -- Yellow to no red
+                    local g = 1.0  -- Always full green
+                    local b = 1.0 * gauge_progress  -- No blue to full blue
+                    
+                    love.graphics.setColor(r, g, b, alpha)
+                    love.graphics.line(points)
+                end
+            end
+        end
+        
+        -- Draw needle (vertical line)
+        love.graphics.setColor(0.9, 0.9, 0.9, 1.0)
+        love.graphics.setLineWidth(3)
+        love.graphics.line(needle_x, thermo_y - 5, needle_x, thermo_y + thermo_height + 5)
+        love.graphics.setLineWidth(1)
+        
+        -- Border - draw rectangle
+        love.graphics.setColor(0.6, 0.6, 0.6, 1.0)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", tube_x, thermo_y, tube_width, thermo_height, 5)
+        love.graphics.setLineWidth(1)
+        
+        -- Draw sprite in the freed-up right space (first quad from UI assets)
+        if ui_assets_spritesheet and ui_assets_quads[1] then
+            love.graphics.setColor(1, 1, 1, 1)
+            local sprite_x = right_box_x + right_box_width - 50 - 32  -- 50px space, 64px (32*2) sprite width
+            local sprite_y = slot_bottom + box_height / 2 - 32  -- Center vertically
+            local base_sprite_scale = 2  -- Same size as spin tokens
+            
+            -- Add grow/shrink animation
+            local grow_shrink = math.sin(sprite_animation_time * 2) * 0.15  -- Oscillate ±15%
+            local animated_scale = base_sprite_scale * (1.0 + grow_shrink)
+            
+            -- Draw from center - add origin offset to center the scaling
+            love.graphics.draw(ui_assets_spritesheet, ui_assets_quads[1], sprite_x + 32, sprite_y + 32, 0, animated_scale, animated_scale, 16, 16)
+        end
     end
 end
 
@@ -309,6 +491,142 @@ function UI.drawBankrollAndPayout(state, draw_wavy_text, get_wiggle_modifiers)
 
     -- Draw BANKROLL
     draw_wavy_text(bank_txt, bal_box_x, Config.BANKROLL_Y, state.symbol_font, b_col, UIConfig.BANKROLL_SEED, 1.0, get_wiggle_modifiers)
+end
+
+-- ============================================================================
+-- UI UPDATE (for animations)
+-- ============================================================================
+
+function UI.update(dt)
+    -- Update oscillation animation for tokens
+    token_oscillation_time = token_oscillation_time + dt
+    
+    -- Update sprite animation
+    sprite_animation_time = sprite_animation_time + dt
+    
+    -- Update gauge needle with twitchy behavior
+    gauge_twitch_timer = gauge_twitch_timer + dt
+    local current_balance = (love.graphics.getFont() and 1 or 0) -- Dummy to avoid nil  
+    local state = require("slot_machine").getState()
+    if state then
+        current_balance = state.bankroll or 0
+        local Shop = require("ui/shop")
+        local goal_balance = Shop.get_balance_goal()
+        local actual_progress = math.min(1.0, current_balance / goal_balance)
+        
+        -- Smooth movement toward actual value with twitches (more erratic when further from 100%)
+        local target_progress = actual_progress
+        local twitchy_offset = 0
+        
+        -- Distance from goal (0 = at goal, 1 = far from goal)
+        local distance_from_goal = 1.0 - actual_progress
+        
+        -- Add sporadic twitches - more frequent and intense when far from goal
+        if gauge_twitch_timer > (0.1 * (0.5 + actual_progress * 0.5)) then  -- Timer faster when far from goal
+            gauge_twitch_timer = 0
+            -- Occasionally overshoot/undershoot for twitchy effect (scaled by distance)
+            if math.random() > (0.7 - distance_from_goal * 0.3) then  -- More likely to twitch when far
+                twitchy_offset = (math.random() - 0.5) * (0.15 + distance_from_goal * 0.25)  -- Larger twitches when far
+            end
+        end
+        
+        -- Small random noise every frame for continuous twitchiness (more when far from goal)
+        twitchy_offset = twitchy_offset + (math.random() - 0.5) * (0.02 + distance_from_goal * 0.04)
+        
+        -- Smoothly move toward target (less smooth when far from goal)
+        local easing = 0.1 * (0.5 + actual_progress * 0.5)  -- Slower easing when far from goal
+        local difference = target_progress + twitchy_offset - gauge_display_progress
+        gauge_display_progress = gauge_display_progress + difference * easing
+        
+        -- Clamp to valid range
+        gauge_display_progress = math.max(0, math.min(1.0, gauge_display_progress))
+    end
+    
+    -- Check if a spin was just used
+    local current_spins = Shop.get_spins_remaining()
+    
+    if current_spins ~= prev_spins_remaining then
+        print("[UI.UPDATE] Spin count changed! prev=" .. prev_spins_remaining .. ", current=" .. current_spins)
+    end
+    
+    if current_spins < prev_spins_remaining then
+        -- A spin was used! Create a departing token animation
+        print("[UI.UPDATE] Spin detected! prev=" .. prev_spins_remaining .. ", current=" .. current_spins)
+        table.insert(departing_tokens, {
+            x = last_token_x + 32,  -- Center of last token (token_size/2)
+            y = last_token_y + 32,  -- Center of last token (token_size/2)
+            vx = math.random(-150, 150),  -- Random horizontal velocity
+            vy = -100 + math.random(-50, 50),  -- Initial velocity with random direction variation
+            lifetime = 0,
+            max_lifetime = 1.2  -- How long the animation lasts before disappearing off screen
+        })
+        print("[UI.UPDATE] Animation created at (" .. last_token_x .. ", " .. last_token_y .. "), departing_tokens count: " .. #departing_tokens)
+    elseif current_spins > prev_spins_remaining then
+        -- Spins were added! Create arriving token animations for new spins
+        print("[UI.UPDATE] Spins restocked! prev=" .. prev_spins_remaining .. ", current=" .. current_spins)
+        local spins_added = current_spins - prev_spins_remaining
+        for i = 1, spins_added do
+            local slot_index = prev_spins_remaining + i
+            table.insert(arriving_tokens, {
+                slot_index = slot_index,
+                lifetime = 0,
+                max_lifetime = 0.3,  -- Animation duration for arrival (faster)
+                delay = (i - 1) * 0.08  -- Stagger tokens by 0.08 seconds each (quicker)
+            })
+        end
+        print("[UI.UPDATE] Added " .. spins_added .. " arriving token animations")
+    end
+    
+    prev_spins_remaining = current_spins
+    
+    -- Update all departing tokens
+    local i = 1
+    while i <= #departing_tokens do
+        local token = departing_tokens[i]
+        token.lifetime = token.lifetime + dt
+        
+        -- Apply gravity (makes it fall faster)
+        token.vy = token.vy + 1500 * dt
+        
+        -- Update position
+        token.x = token.x + token.vx * dt
+        token.y = token.y + token.vy * dt
+        
+        -- Remove if animation is done
+        if token.lifetime >= token.max_lifetime then
+            table.remove(departing_tokens, i)
+        else
+            i = i + 1
+        end
+    end
+    
+    -- Update all arriving tokens
+    local j = 1
+    while j <= #arriving_tokens do
+        local token = arriving_tokens[j]
+        token.lifetime = token.lifetime + dt
+        
+        -- Remove if animation is done (including delay)
+        if token.lifetime >= (token.max_lifetime + token.delay) then
+            table.remove(arriving_tokens, j)
+        else
+            j = j + 1
+        end
+    end
+end
+
+function UI.clear_animations()
+    departing_tokens = {}
+    arriving_tokens = {}
+end
+
+function UI.initialize()
+    -- Reset animation tracking when UI is initialized
+    prev_spins_remaining = Shop.get_spins_remaining()
+    departing_tokens = {}
+    arriving_tokens = {}
+    print("[UI.INITIALIZE] UI initialized! prev_spins_remaining set to: " .. prev_spins_remaining)
+    print("[UI.INITIALIZE] departing_tokens and arriving_tokens cleared")
 end
 
 return UI

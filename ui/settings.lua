@@ -8,6 +8,8 @@ local Settings = {} -- Ensure the module table is initialized
 
 -- State
 local settings_icon = nil
+local ui_assets = nil
+local gem_icon_quad = nil
 
 -- Menu dimensions
 local MENU_W = Config.GAME_WIDTH * UIConfig.SETTINGS_MENU_WIDTH_RATIO
@@ -50,10 +52,10 @@ end
 -- Checks if a difficulty button was clicked in the settings menu
 function Settings.check_difficulty_click(x, y)
     local button_y = MENU_Y + MENU_H * 0.25
-    local button_spacing = 100
-    local button_width = 90
+    local button_spacing = 110
+    local button_width = 100
     local button_height = 45
-    local buttons_start_x = MENU_X + (MENU_W / 2) - button_spacing - 60
+    local buttons_start_x = MENU_X + (MENU_W / 2) - 55
     
     local difficulties = {"EASY", "MEDIUM", "HARD"}
     
@@ -70,42 +72,73 @@ function Settings.check_difficulty_click(x, y)
     return false
 end
 
+-- Checks if return to main menu button was clicked
+function Settings.check_return_to_menu_click(x, y)
+    local button_x = MENU_X + 15
+    local button_y = MENU_Y + 15
+    local button_width = 150
+    local button_height = 40
+    
+    return x >= button_x and x <= button_x + button_width and
+           y >= button_y and y <= button_y + button_height
+end
+
 -- Checks if a keepsake was clicked in the settings menu
 function Settings.check_keepsake_click(x, y)
     local grid_start_x = MENU_X + MENU_W * 0.5 - 160
-    local grid_start_y = MENU_Y + MENU_H * 0.45
-    return Keepsakes.check_click(x, y, grid_start_x, grid_start_y, 60, 6)
+    local grid_start_y = MENU_Y + MENU_H * 0.35
+    return Keepsakes.check_click(x, y, grid_start_x, grid_start_y, 80, 35)
 end
 
 -- --- Drawing Functions ---
 
-function Settings.draw_settings_button()
-    local bx = Config.SETTINGS_BTN_X
-    local by = Config.SETTINGS_BTN_Y - 20
-    local size = Config.SETTINGS_BTN_SIZE
+function Settings.draw_gems_counter(gems)
+    local bx = Config.BUTTON_START_X  -- Move to button position
+    local by = Config.BUTTON_START_Y + 70  -- Move down 70px
+    local size = Config.BUTTON_WIDTH  -- Make it square
+    local width = Config.BUTTON_WIDTH  -- Match button width
+    
+    -- Load UI assets for gem icon if not already loaded
+    if not ui_assets then
+        ui_assets = love.graphics.newImage("assets/UI_assets.png")
+        ui_assets:setFilter("nearest", "nearest")  -- Make sprites crisp
+        local quad_width = 32
+        local quad_height = 32
+        local col = 2
+        local row = 2
+        local x = (col - 1) * quad_width
+        local y = (row - 1) * quad_height
+        gem_icon_quad = love.graphics.newQuad(x, y, quad_width, quad_height, ui_assets:getDimensions())
+    end
     
     love.graphics.push()
     
-    -- Draw standard UI backdrop
+    -- Draw background box (no border)
     love.graphics.setColor(UIConfig.BOX_BACKGROUND_COLOR)
-    love.graphics.rectangle("fill", bx, by, size, size, 5, 5)
-    
-    -- Draw border
-    love.graphics.setColor(UIConfig.BOX_BORDER_COLOR)
-    love.graphics.rectangle("line", bx, by, size, size, 5, 5)
+    love.graphics.rectangle("fill", bx, by, width, size, 5, 5)
 
-    -- Draw asset image (settings.png)
-    if settings_icon then
-        local img_w = settings_icon:getWidth()
-        local img_h = settings_icon:getHeight()
-        -- Calculate scale to fit the image inside the button square
-        local scale = size / math.max(img_w, img_h)
-        local tx = bx + size/2
-        local ty = by + size/2
+    -- Draw gem icon with wobble animation - centered in box
+    if ui_assets and gem_icon_quad then
+        local wiggle_amount = math.sin(love.timer.getTime() * 8) * 5  -- Wobble effect
+        local icon_size = 32 * 2.76  -- 32 base size scaled by 2.76x (35% bigger)
+        local icon_x = bx + (width - icon_size) / 2  -- Center horizontally
+        local icon_y = by + (size - icon_size) / 2 + wiggle_amount  -- Center vertically with wobble
         
-        love.graphics.setColor(UIConfig.TEXT_WHITE)
-        love.graphics.draw(settings_icon, tx, ty, 0, scale, scale, img_w/2, img_h/2)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(ui_assets, gem_icon_quad, icon_x, icon_y, 0, 2.76, 2.76)  -- Scaled up 2.76x (35% bigger)
     end
+
+    -- Draw gems counter text in bottom left with animation
+    local time = love.timer.getTime()
+    local pulse_scale = 1 + math.sin(time * 4) * 0.1  -- Subtle pulsing scale
+    love.graphics.setColor(0.6, 0.8, 1, 1)  -- Cyan for gems
+    local gems_font = love.graphics.newFont("splashfont.otf", 24)  -- Larger text
+    love.graphics.setFont(gems_font)
+    local gems_text = tostring(gems)
+    local text_w = gems_font:getWidth(gems_text)
+    local text_h = gems_font:getHeight()
+    -- Position text in bottom left with some padding, apply pulse scale
+    love.graphics.print(gems_text, bx + 8, by + size - text_h - 6, 0, pulse_scale, pulse_scale)
     
     love.graphics.pop()
 end
@@ -155,16 +188,16 @@ function Settings.draw_menu()
     
     -- Draw difficulty buttons
     local button_y = MENU_Y + MENU_H * 0.25
-    local button_spacing = 100
-    local button_width = 90
+    local button_spacing = 110
+    local button_width = 100
     local button_height = 45
-    local buttons_start_x = MENU_X + (MENU_W / 2) - button_spacing - 60
+    local buttons_start_x = MENU_X + (MENU_W / 2) - 55
     
     local difficulties = {"EASY", "MEDIUM", "HARD"}
     local button_colors = {
-        {0.2, 1.0, 0.2, 0.8},    -- Green for EASY
-        {1.0, 0.8, 0.2, 0.8},    -- Gold for MEDIUM
-        {1.0, 0.2, 0.2, 0.8}     -- Red for HARD
+        {0.25, 0.25, 0.93, 0.8},  -- Royal blue for EASY
+        {1.0, 0.8, 0.2, 0.8},     -- Gold for MEDIUM
+        {1.0, 0.2, 0.2, 0.8}      -- Red for HARD
     }
     
     for i, diff in ipairs(difficulties) do
@@ -172,11 +205,11 @@ function Settings.draw_menu()
         
         -- Highlight selected difficulty
         if Difficulty.get() == diff then
-            love.graphics.setColor(button_colors[i][1] + 0.3, button_colors[i][2] + 0.3, button_colors[i][3] + 0.3, 1.0)
-            love.graphics.setLineWidth(3)
+            love.graphics.setColor(button_colors[i])  -- Color when selected
+            love.graphics.setLineWidth(4)
         else
-            love.graphics.setColor(button_colors[i])
-            love.graphics.setLineWidth(1.5)
+            love.graphics.setColor(0.5, 0.5, 0.5, 0.8)  -- Grey out when not selected
+            love.graphics.setLineWidth(2)
         end
         
         -- Draw button background
@@ -202,8 +235,28 @@ function Settings.draw_menu()
     
     -- Draw keepsake selection grid
     local grid_start_x = MENU_X + MENU_W * 0.5 - 160
-    local grid_start_y = MENU_Y + MENU_H * 0.45
-    Keepsakes.draw_grid(grid_start_x, grid_start_y, 64, 12, true)
+    local grid_start_y = MENU_Y + MENU_H * 0.35
+    Keepsakes.draw_grid(grid_start_x, grid_start_y, 80, 35, true)
+    
+    -- 7. Return to Main Menu Button (Top Left)
+    local button_x = MENU_X + 15
+    local button_y = MENU_Y + 15
+    local button_width = 150
+    local button_height = 40
+    
+    love.graphics.setColor(0.2, 0.2, 0.8, 0.8)  -- Blue color
+    love.graphics.rectangle("fill", button_x, button_y, button_width, button_height, 5, 5)
+    
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", button_x, button_y, button_width, button_height, 5, 5)
+    love.graphics.setLineWidth(1)
+    
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(SlotMachine.info_font)
+    local button_text = "BACK"
+    local text_w = SlotMachine.info_font:getWidth(button_text)
+    love.graphics.print(button_text, button_x + button_width / 2 - text_w / 2, button_y + button_height / 2 - 8)
     
     love.graphics.pop()
 end

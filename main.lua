@@ -14,16 +14,22 @@ local Settings = require("ui/settings")
 local UI = require("ui/ui")
 local Difficulty = require("difficulty")
 local Keepsakes = require("keepsakes")
+local ParticleSystem = require("particle_system")
+local Shop = require("ui/shop")
+local Failstate = require("ui/failstate")
+local UpgradeNode = require("upgrade_node")
 
 local main_canvas
 local scale = 1
 local offset_x = 0
 local offset_y = 0
-local game_state = "MENU" -- States: "MENU", "GAME", "PAUSE", "SETTINGS", "MENU_EXIT"
+local game_state = "MENU" -- States: "MENU", "GAME", "PAUSE", "SETTINGS", "HOME_MENU_TO_GAME_TRANSITION"
 
--- Menu exit animation
-local menu_exit_timer = 0
-local menu_exit_duration = 1.0  -- 1.0 seconds for longer animation
+-- Overlay management for smooth transitions
+local overlay_alpha = 0
+local overlay_fade_duration = 0.5  -- Duration to fade overlay in/out
+local overlay_target_alpha = 0
+local overlay_fade_timer = 0
 
 local function update_scale()
     local w, h = love.graphics.getDimensions()
@@ -39,13 +45,11 @@ local function draw_menu_content()
     local w = Config.GAME_WIDTH
     local h = Config.GAME_HEIGHT
     
-    -- Calculate animation offset (for MENU_EXIT state)
-    local anim_progress = 0
-    if game_state == "MENU_EXIT" then
-        anim_progress = menu_exit_timer / menu_exit_duration
-    end
-    -- Draw the main menu
-    HomeMenu.draw(menu_exit_timer, menu_exit_duration)
+    -- Get animation timers from HomeMenu
+    local entrance_timer, entrance_duration, exit_timer, exit_duration = HomeMenu.get_animation_timers()
+    
+    -- Draw the main menu (using animation state from HomeMenu)
+    HomeMenu.draw(exit_timer, exit_duration)
     
     -- Draw keepsake tooltip on hover
     local w = Config.GAME_WIDTH
@@ -124,6 +128,8 @@ function love.load()
     Settings.load()
     Keepsakes.load()
     HomeMenu.load_fonts()
+    HomeMenu.start_entrance_animation()  -- Start menu entrance animation on startup
+    UpgradeNode.load()  -- Load upgrade node system
     update_scale()
 end
 
@@ -131,26 +137,121 @@ function love.resize(w, h)
     update_scale()
 end
 
+-- Reset all game state for a new game
+local function reset_game_state()
+    local Slots = require("slot_machine")
+    
+    -- Reset slot machine state
+    Slots.reset_state()
+    
+    -- Reset UI animations
+    UI.initialize()
+    
+    -- Clear any particle effects
+    Lever.clearParticles()
+    
+    -- Reset gems currency
+    Shop.reset_gems()
+    
+    -- Reset keepsake splash state
+    local state = Slots.getState()
+    if state then
+        state.keepsake_splash_timer = 0
+        state.keepsake_splash_text = ""
+    end
+    
+    print("[RESET] All game state reset for new game")
+end
+
+-- Update overlay visibility smoothly
+local function update_overlay(dt)
+    if overlay_alpha ~= overlay_target_alpha then
+        if overlay_alpha < overlay_target_alpha then
+            overlay_alpha = math.min(overlay_alpha + (1 / overlay_fade_duration) * dt, overlay_target_alpha)
+        else
+            overlay_alpha = math.max(overlay_alpha - (1 / overlay_fade_duration) * dt, overlay_target_alpha)
+        end
+    end
+end
+
+-- Set overlay visibility target
+local function set_overlay_visible(visible)
+    overlay_target_alpha = visible and 1.0 or 0
+end
+
 function love.update(dt)
+    -- Update overlay state
+    update_overlay(dt)
+    
     -- Background always updates for the smooth speed transition
     Background.update(dt)
     
-    -- Handle menu exit animation
-    if game_state == "MENU_EXIT" then
-        menu_exit_timer = menu_exit_timer + dt
-        if menu_exit_timer >= menu_exit_duration then
+    -- Update UI animations regardless of game state
+    UI.update(dt)
+    
+    -- Update menu animations
+    HomeMenu.update(dt)
+    
+    -- Update upgrade nodes
+    UpgradeNode.update(dt)
+    
+    -- DEBUG: Print state every 60 frames (once per second at 60fps)
+    if love.timer.getTime() % 1 < dt then
+        print("[STATE] game_state=" .. game_state .. ", spins=" .. Shop.get_spins_remaining() .. ", bankroll=" .. Slots.getBankroll() .. ", goal=" .. Shop.get_balance_goal())
+    end
+    
+    -- Handle home menu to game transition animation
+    if game_state == "HOME_MENU_TO_GAME_TRANSITION" then
+        -- Update home menu animations to show the exit animation
+        HomeMenu.update(dt)
+        
+        -- Check if menu exit animation is complete
+        if not HomeMenu.is_exit_animating() then
             game_state = "GAME"
-            menu_exit_timer = 0
+            reset_game_state()  -- Reset all game state when starting a new game
         end
     end
     
-    if game_state == "GAME" then
+    if game_state == "GAME" or game_state == "SHOP" then
         Slots.update(dt)
         Lever.update(dt)
         Buttons.update(dt)
         BaseFlame.update(dt)
         SlotBorders.update(dt) 
-        SlotSmoke.update(dt) 
+        SlotSmoke.update(dt)
+        Shop.update(dt)  -- Update shop system (gems conversion animation)
+        
+        -- Check if shop closing animation is complete
+        if game_state == "SHOP" and not Shop.is_open() then
+            Shop.start_new_round()
+            game_state = "GAME"
+        end
+        
+        -- Set up spin callbacks for the next spin (handles both space press and mouse drag)
+        -- These are cleared after each spin completes, so we re-set them for the next spin
+        -- Only set up callbacks during normal GAME play, not in shop
+        if game_state == "GAME" and not Slots.is_spinning() and not Slots.is_block_game_active() and Shop.get_spins_remaining() > 0 then
+            -- Set spin start callback if not already set
+            Slots.set_spin_start_callback(function()
+                print("[SPIN_START_CALLBACK] Spin starting, using a spin")
+                print("[SPIN_START_CALLBACK] Spins before use_spin(): " .. Shop.get_spins_remaining())
+                Shop.use_spin()
+                print("[SPIN_START_CALLBACK] Spins after use_spin(): " .. Shop.get_spins_remaining())
+            end)
+            
+            -- Set spin complete callback if not already set
+            Slots.set_spin_complete_callback(function()
+                print("[CALLBACK] Spin resolved, bankroll: " .. Slots.getBankroll() .. ", goal: " .. Shop.get_balance_goal())
+                if Slots.getBankroll() >= Shop.get_balance_goal() then
+                    -- Balance goal met, open shop
+                    print("[CALLBACK] Goal met! Opening shop")
+                    game_state = "SHOP"
+                    Shop.open()
+                else
+                    print("[CALLBACK] Goal not met yet")
+                end
+            end)
+        end
         
         -- Check if slots stopped spinning to slow background
         if Slots.is_spinning() or Slots.is_block_game_active() then 
@@ -158,6 +259,59 @@ function love.update(dt)
         else
             Background.setSpinning(false)
         end
+        
+        -- Check if balance goal is met after scoring sequence (whenever not spinning and not in block game)
+        if not Slots.is_spinning() and not Slots.is_block_game_active() then
+            if Slots.getBankroll() >= Shop.get_balance_goal() and game_state ~= "SHOP" then
+                -- Goal was met during play, open shop
+                print("[SCORING] Balance goal met during scoring sequence! Bankroll: " .. Slots.getBankroll() .. ", goal: " .. Shop.get_balance_goal())
+                game_state = "SHOP"
+                Shop.open()
+                return  -- Exit update to prevent fallback logic
+            end
+        end
+        
+        -- Check if spins ran out and game should end
+        if Shop.get_spins_remaining() == 0 and not Slots.is_spinning() and not Slots.is_block_game_active() then
+            -- Spins exhausted and no spinning happening
+            print("[FALLBACK] Spins exhausted, bankroll: " .. Slots.getBankroll() .. ", goal: " .. Shop.get_balance_goal())
+            if Slots.getBankroll() >= Shop.get_balance_goal() and game_state ~= "SHOP" then
+                -- Goal was met, open shop
+                print("[FALLBACK] Goal met, opening shop")
+                game_state = "SHOP"
+                Shop.open()
+            else
+                -- Goal not met, game over - show failstate
+                print("[FALLBACK] Goal not met, showing failstate")
+                game_state = "FAILSTATE"
+                Failstate.initialize()
+                Lever.clearParticles()
+            end
+        end
+    end
+    
+    -- Update failstate if active
+    if game_state == "FAILSTATE" then
+        set_overlay_visible(true)  -- Keep overlay visible during failstate
+        Failstate.update(dt)
+        -- Check if fade out is complete
+        if Failstate.is_fade_complete() then
+            -- Transition to menu while keeping overlay visible
+            game_state = "MENU"
+            HomeMenu.reset_animations()  -- Reset animation state
+            HomeMenu.start_entrance_animation()  -- Start menu entrance animation
+            Lever.clearParticles()
+        end
+    elseif game_state == "MENU" then
+        -- Keep overlay visible during menu entrance animation
+        if HomeMenu.is_entrance_animating() then
+            set_overlay_visible(true)
+        else
+            set_overlay_visible(false)
+        end
+    elseif game_state == "GAME" then
+        -- Remove overlay when new game starts
+        set_overlay_visible(false)
     end
 end
 
@@ -167,15 +321,15 @@ function love.draw()
     -- 1. Draw Background Shader (Full Window)
     Background.draw()
     
-    -- 2. Draw Full Screen Overlay (For Menu and Pause - but NOT for MENU_EXIT, that renders on top at the end)
-    if (game_state == "MENU" or game_state == "PAUSE" or game_state == "SETTINGS") then
+    -- 2. Draw Full Screen Overlay (For Menu and Pause)
+    if (game_state == "MENU" or game_state == "PAUSE" or game_state == "SETTINGS" or game_state == "FAILSTATE") then
         -- Normal overlay for menu/pause/settings states
         love.graphics.setColor(0, 0, 0, 0.9) 
         love.graphics.rectangle("fill", 0, 0, w, h)
     end
     
-    -- 3. Draw Game Content to Canvas (Only happens in GAME/PAUSE/SETTINGS/MENU_EXIT)
-    if game_state ~= "MENU" then -- Draw base game even under pause/settings and during menu exit
+    -- 3. Draw Game Content to Canvas (Only happens in GAME/PAUSE/SETTINGS/HOME_MENU_TO_GAME_TRANSITION)
+    if game_state ~= "MENU" then -- Draw base game even under pause/settings and during menu transition
         if main_canvas then
             love.graphics.setCanvas(main_canvas)
             love.graphics.clear(0, 0, 0, 0) 
@@ -192,6 +346,12 @@ function love.draw()
     love.graphics.translate(offset_x, offset_y)
     love.graphics.scale(scale)
 
+    -- Draw overlay behind menu (but in front of game content)
+    if overlay_alpha > 0 then
+        love.graphics.setColor(0, 0, 0, overlay_alpha)
+        love.graphics.rectangle("fill", 0, 0, Config.GAME_WIDTH, Config.GAME_HEIGHT)
+    end
+
     -- 4a. Draw Base Flame (Behind Canvas)
     BaseFlame.draw()
     
@@ -201,16 +361,21 @@ function love.draw()
     -- Draw Display Boxes (only in game states, not menu)
     if game_state ~= "MENU" then
         UI.drawDisplayBoxes()
-        UI.drawBottomOverlays()
         local state = Slots.getState()
+        UI.drawBottomOverlays(state)
         local KeepsakeSplash = require("keepsake_splashs")
         KeepsakeSplash.draw(state)
+        UpgradeNode.draw()
     end
     
     if game_state == "MENU" then
         draw_menu_content()
     
-    elseif game_state == "GAME" or game_state == "PAUSE" or game_state == "SETTINGS" or game_state == "MENU_EXIT" then
+    elseif game_state == "HOME_MENU_TO_GAME_TRANSITION" then
+        -- Draw both the menu animation and the game underneath
+        draw_menu_content()
+    
+    elseif game_state == "GAME" or game_state == "PAUSE" or game_state == "SETTINGS" or game_state == "SHOP" or game_state == "FAILSTATE" then
         -- 4b. Draw Scaled Canvas to Screen (at 0,0 in the transformed space)
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(main_canvas, 0, 0)
@@ -221,9 +386,9 @@ function love.draw()
         -- 4c. Draw Knob Particles on Top 
         Lever.drawParticles()
         
-        -- 4d. Draw Settings Button (Always in GAME mode, except MENU)
+        -- 4d. Draw Gems Counter (Always in GAME mode, except MENU)
         if game_state ~= "SETTINGS" then
-             Settings.draw_settings_button()
+             Settings.draw_gems_counter(Shop.get_gems())
         end
         
         if game_state == "PAUSE" then
@@ -246,6 +411,17 @@ function love.draw()
         -- 4g. Draw the full settings menu overlay (on top of everything else)
         if game_state == "SETTINGS" then
             Settings.draw_menu()
+        end
+        
+        -- 4h. Draw shop menu if open
+        if game_state == "SHOP" then
+            print("[DRAW] Drawing shop, game_state is: " .. game_state)
+            Shop.draw(Slots.getBankroll(), Slots)
+        end
+        
+        -- 4i. Draw failstate menu if active
+        if game_state == "FAILSTATE" then
+            Failstate.draw()
         end
     end
     
@@ -283,8 +459,10 @@ function love.mousepressed(x, y, button)
     if game_state == "MENU" then
         -- Check if START button was clicked
         if check_start_button_click(gx, gy) then
-            game_state = "MENU_EXIT"
-            menu_exit_timer = 0
+            HomeMenu.start_exit_animation()  -- Start menu exit animation
+            game_state = "HOME_MENU_TO_GAME_TRANSITION"
+            Shop.initialize(Slots.getBankroll())  -- Initialize shop system
+            UI.initialize()  -- Initialize UI animations
             return
         end
         
@@ -295,6 +473,24 @@ function love.mousepressed(x, y, button)
         
         -- Check if keepsake was clicked
         if check_keepsake_click(gx, gy) then
+            return
+        end
+        return
+    end
+    
+    if game_state == "SHOP" and button == 1 then
+        -- Check if NEXT ROUND button was clicked
+        if Shop.check_next_button_click(gx, gy) then
+            Shop.close()  -- Start shop closing animation
+            return
+        end
+        return
+    end
+    
+    if game_state == "FAILSTATE" and button == 1 then
+        -- Check if "COME BACK SOON" button was clicked
+        if Failstate.check_button_click(gx, gy) then
+            Failstate.fade_out()
             return
         end
         return
@@ -315,16 +511,17 @@ function love.mousepressed(x, y, button)
         if Settings.check_keepsake_click(gx, gy) then
             return
         end
+        
+        -- Check if return to menu button was clicked
+        if Settings.check_return_to_menu_click(gx, gy) then
+            game_state = "MENU" -- Return to main menu
+            Lever.clearParticles()  -- Clear particles when returning to menu
+            return
+        end
         return
     end
 
     if button == 1 and game_state == "GAME" then
-        
-        -- Check if settings button is pressed
-        if Settings.check_settings_button(gx, gy) then
-            game_state = "SETTINGS"
-            return
-        end
         
         -- Check for QTE Click
         if Slots.check_qte_click(gx, gy) then
@@ -401,14 +598,24 @@ function love.keypressed(key)
     elseif game_state == "GAME" then
         
         if key == "space" then
+            print("[KEYPRESSED] Space key detected in GAME state")
             
             if Slots.is_jammed() then
                 Slots.re_splash_jam()
                 return
             end
             
+            -- Only allow spin if we have spins remaining
+            if Shop.get_spins_remaining() <= 0 then
+                print("[KEYPRESSED] No spins remaining!")
+                return
+            end
+            
+            -- Callbacks are already set in the update loop, just trigger the lever
+            print("[KEYPRESSED] Triggering lever and spin")
             Lever.trigger(Slots.start_spin)
-            Background.setSpinning(true) 
+            Background.setSpinning(true)
+            print("[KEYPRESSED] Spin initiated") 
         else
             Slots.keypressed(key)
         end

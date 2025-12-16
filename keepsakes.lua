@@ -353,7 +353,10 @@ function Keepsakes.draw_grid(start_x, start_y, cell_size, cell_gap, show_names)
         
         -- Draw glow behind if selected
         if Keepsakes.is_selected(i) then
-            love.graphics.setColor(1, 1, 0, 0.3)  -- Yellow glow
+            -- Pulsating white glow
+            local time = love.timer.getTime()
+            local pulse = 0.2 + 0.15 * math.sin(time * 3)  -- Pulses between 0.2 and 0.35
+            love.graphics.setColor(1, 1, 1, pulse)  -- Subtle pulsating white
             love.graphics.rectangle("fill", x, y, cell_size, cell_size, 5, 5)
         end
         

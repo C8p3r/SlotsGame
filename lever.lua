@@ -2,6 +2,7 @@
 local Config = require("conf")
 local SlotMachine = require("slot_machine") -- Needed for streak info
 local BackgroundRenderer = require("background_renderer")
+local ParticleSystem = require("particle_system")
 
 local Lever = {}
 
@@ -85,42 +86,13 @@ function Lever.load()
     last_intensity = 0
     flare_timer = 0.0
     
-    current_emission = 50
-    current_accel_x = 0
-    current_accel_y_min = -150
-    current_accel_y_max = -250
-    current_life_min = 0.5
-    current_life_max = 1.0
-    
-    -- Initialize current color states using table copy
+    -- Initialize current color states
     current_c_start = {COLOR_HOT_START[1], COLOR_HOT_START[2], COLOR_HOT_START[3], COLOR_HOT_START[4]}
     current_c_mid = {COLOR_HOT_MID[1], COLOR_HOT_MID[2], COLOR_HOT_MID[3], COLOR_HOT_MID[4]}
     current_c_end = {COLOR_HOT_END[1], COLOR_HOT_END[2], COLOR_HOT_END[3], COLOR_HOT_END[4]}
     
-    if not particle_texture then
-        particle_texture = create_glow_texture()
-    end
-    
-    particle_sys = love.graphics.newParticleSystem(particle_texture, 3000) 
-    
-    -- ADJUSTED: Emission area is a small ellipse confined to the top 1/3rd of the knob width
-    -- Width is 2/3rds of the knob radius, height is 1/3rd of the knob radius
-    local R = Config.LEVER_KNOB_RADIUS
-    particle_sys:setEmissionArea('ellipse', R * (2/3), R * (1/3)) 
-    
-    particle_sys:setSpeed(20, 80)
-    particle_sys:setDirection(-math.pi / 2) 
-    particle_sys:setSpread(0.5) 
-    
-    -- Set initial colors directly from current_c_start/mid/end
-    particle_sys:setColors(current_c_start[1], current_c_start[2], current_c_start[3], current_c_start[4], 
-                           current_c_mid[1], current_c_mid[2], current_c_mid[3], current_c_mid[4], 
-                           current_c_end[1], current_c_end[2], current_c_end[3], current_c_end[4], 
-                           0.1, 0.1, 0.1, 0)
-    
-    particle_sys:setSizes(1.5, 2.5, 0.5) 
-    particle_sys:setEmissionRate(current_emission) -- Initial setting
-    particle_sys:setSpin(0, 3)
+    -- Load particles via consolidated particle system
+    ParticleSystem.load()
 end
 
 function Lever.trigger(callback)
@@ -216,6 +188,9 @@ end
 
 
 function Lever.update(dt)
+    -- Get reference to particle system
+    local particle_sys = ParticleSystem.get_lever_particle_system()
+    
     -- 1. Determine maximum allowed lever movement
     local max_movement = Config.LEVER_TRACK_HEIGHT
     if SlotMachine.is_jammed() then
@@ -373,6 +348,11 @@ function Lever.update(dt)
     particle_sys:update(dt)
 end
 
+-- Update only particles (called when in MENU to let particles fade out)
+function Lever.updateParticles(dt)
+    ParticleSystem.update_lever_particles_only(dt)
+end
+
 local function get_knob_rect()
     local x = Config.LEVER_TRACK_X + (Config.LEVER_TRACK_WIDTH / 2)
     -- Knob still uses instantaneous knob_y for responsiveness
@@ -459,10 +439,11 @@ function Lever.draw()
 end
 
 function Lever.drawParticles()
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(particle_sys, 0, 0) 
-    love.graphics.setBlendMode("alpha")
+    ParticleSystem.draw_lever_particles()
+end
+
+function Lever.clearParticles()
+    ParticleSystem.clear_lever_particles()
 end
 
 return Lever

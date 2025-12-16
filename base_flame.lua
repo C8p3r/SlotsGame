@@ -238,7 +238,7 @@ function BaseFlame.update(dt)
         
         if streak >= 2 then
             -- POSITIVE STREAK (Shift to Blue Fire and more LICKING flames)
-            local multiplier = math.min(10, streak)
+            local multiplier = math.min(5, streak)  -- Cap at 5 to prevent excessive particle emission
             
             -- T aggressively hits 1.0 at streak 2
             local T = math.min(1.0, (streak - 1) / 1.0) 
@@ -281,7 +281,7 @@ function BaseFlame.update(dt)
 
         elseif streak <= -2 then
             -- NEGATIVE STREAK (Shift to Translucent Smoke)
-            local multiplier = math.min(10, abs_streak)
+            local multiplier = math.min(5, abs_streak)  -- Cap at 5 to prevent excessive particle emission
             
             -- T aggressively hits 1.0 at streak -2
             local T = math.min(1.0, (abs_streak - 1) / 1.0)
