@@ -121,14 +121,14 @@ function Failstate.draw()
         -- Title
         love.graphics.setColor(1, 0.2, 0.2, fade_alpha)  -- Red title
         love.graphics.setFont(title_font)
-        local title = "GAME OVER"
+        local title = "BROKE + MAD + RATIO"
         local title_w = title_font:getWidth(title)
         love.graphics.print(title, MENU_X + (MENU_W - title_w) / 2, MENU_Y + 40)
         
         -- Message
         love.graphics.setColor(0.8, 0.8, 0.8, fade_alpha)
         love.graphics.setFont(message_font)
-        local message = "thy art broke and hath no further motion!"
+        local message = "thou art broke and hath no further motion! soon shall thy mother be sodimised!"
         local msg_w = message_font:getWidth(message)
         love.graphics.print(message, MENU_X + (MENU_W - msg_w) / 2, MENU_Y + 110)
         

@@ -98,7 +98,11 @@ function SlotDraw.draw(state)
             love.graphics.clear(0, 0, 0, 0)
         
             -- Desaturate the background only where slots are (stencil-based)
-            Background.drawDesaturatedSlots(start_x, slot_y_pos, Config.SLOT_WIDTH, slot_height, Config.SLOT_GAP, num_slots)
+            local display_box_start_x = Config.PADDING_X + 30
+            local display_box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+            local display_box_width = (Config.SLOT_WIDTH * 5) + (Config.SLOT_GAP * 4)
+            local display_box_height = Config.SLOT_Y - display_box_y - 20
+            Background.drawDesaturatedSlots(start_x, slot_y_pos, Config.SLOT_WIDTH, slot_height, Config.SLOT_GAP, num_slots, display_box_start_x, display_box_y, display_box_width, display_box_height)
 
             local x_walker = start_x
         
@@ -158,14 +162,7 @@ function SlotDraw.draw(state)
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(state.symbol_canvas, 0, 0)
     end
-    
-    -- Apply Scanline Shader over the entire canvas/game area
-    if state.scanline_shader and state.symbol_canvas then
-        love.graphics.setShader(state.scanline_shader)
-        state.scanline_shader:send("scanline_density", Config.GAME_HEIGHT) 
-        love.graphics.draw(state.symbol_canvas, 0, 0)
-        love.graphics.setShader() 
-    end
+
 
     local x_walker = start_x
     for i, slot in ipairs(state.slots) do

@@ -247,8 +247,8 @@ function BackgroundRenderer.draw()
     end
 end
 
--- Draw the desaturated background only inside slot rectangles
-function BackgroundRenderer.drawDesaturatedSlots(start_x, slot_y_pos, slot_width, slot_height, slot_gap, num_slots)
+-- Draw the desaturated background only inside slot rectangles and display boxes
+function BackgroundRenderer.drawDesaturatedSlots(start_x, slot_y_pos, slot_width, slot_height, slot_gap, num_slots, display_box_start_x, display_box_y, display_box_width, display_box_height)
     if not background_canvas then return end
     if not greyscale_shader then return end
     -- Send shader parameters: texture size, blur radius and desaturation amount
@@ -259,12 +259,22 @@ function BackgroundRenderer.drawDesaturatedSlots(start_x, slot_y_pos, slot_width
 
     love.graphics.setShader(greyscale_shader)
     love.graphics.setColor(1, 1, 1)
+    
+    -- Draw desaturated background in slot rectangles
     for i = 1, num_slots do
         local x = start_x + (i-1) * (slot_width + slot_gap)
         love.graphics.setScissor(x, slot_y_pos, slot_width, slot_height)
         love.graphics.draw(source_canvas, 0, 0)
         love.graphics.setScissor()
     end
+    
+    -- Draw desaturated background in display box area
+    if display_box_start_x and display_box_y and display_box_width and display_box_height then
+        love.graphics.setScissor(display_box_start_x, display_box_y, display_box_width, display_box_height)
+        love.graphics.draw(source_canvas, 0, 0)
+        love.graphics.setScissor()
+    end
+    
     love.graphics.setShader()
 end
 

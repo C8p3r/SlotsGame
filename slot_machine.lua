@@ -396,7 +396,7 @@ function SlotMachine.load()
     end
     state.neon_glow_shader = load_s("shaders/neon_glow_shader.glsl")
     state.invert_shader = load_s("shaders/invert_rgb_shader.glsl")
-    state.scanline_shader = load_s("shaders/scanline_shader.glsl")
+    -- scanline_shader removed
     
     state.symbol_canvas = love.graphics.newCanvas(Config.GAME_WIDTH, Config.GAME_HEIGHT)
     

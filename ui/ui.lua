@@ -6,12 +6,36 @@ local Config = require("conf")
 local UIConfig = require("ui/ui_config")
 local SlotMachine = require("slot_machine")
 local Shop = require("ui/shop")
+local UpgradeNode = require("upgrade_node")
 
 local UI = {}
 
 -- UI Assets
 local ui_assets_spritesheet = nil
 local ui_assets_quads = {}  -- Store quads for 4x4 grid
+
+-- Greyscale and blur shader for display boxes
+local greyscale_shader = nil
+local display_box_canvas = nil
+
+local function load_greyscale_shader()
+    if not greyscale_shader then
+        local ok, shader = pcall(love.graphics.newShader, "shaders/greyscale_shader.glsl")
+        if ok then
+            greyscale_shader = shader
+        else
+            print("Warning: failed to load greyscale shader: " .. tostring(shader))
+            greyscale_shader = nil
+        end
+    end
+end
+
+local function get_display_box_canvas(width, height)
+    if not display_box_canvas or display_box_canvas:getWidth() ~= width or display_box_canvas:getHeight() ~= height then
+        display_box_canvas = love.graphics.newCanvas(width, height)
+    end
+    return display_box_canvas
+end
 
 -- Load UI assets on initialization
 local function load_ui_assets()
@@ -38,6 +62,19 @@ end
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
+
+-- Store upgrade box positions for click detection and dragging
+local upgrade_box_positions = {}  -- Table of {x, y, size, index}
+
+function UI.get_upgrade_box_at_position(x, y)
+    for _, box in ipairs(upgrade_box_positions) do
+        if x >= box.x and x <= box.x + box.size and
+           y >= box.y and y <= box.y + box.size then
+            return box.index
+        end
+    end
+    return nil
+end
 
 local function format_large_number(num)
     -- Format numbers in scientific notation if they exceed 99,999,999 or go below -99,999,999
@@ -166,7 +203,11 @@ end
 -- DISPLAY BOXES (Above Slots and Bottom Overlays)
 -- ============================================================================
 
-function UI.drawDisplayBoxes()
+function UI.drawUpgradesLayer()
+    -- Draw selected upgrades and flying animations as a foremost layer
+    -- This function should be called AFTER all game content
+    -- NOTE: This is called INSIDE the push/pop scale/translate, so coordinates are already in game space
+    
     -- Display box constants
     local BOX_WIDTH = Config.SLOT_WIDTH
     local BOX_GAP = Config.SLOT_GAP
@@ -175,13 +216,126 @@ function UI.drawDisplayBoxes()
     local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
     local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
     
-    -- Draw the 5 main display boxes
-    love.graphics.setColor(UIConfig.DISPLAY_BOX_COLOR)
-    for i = 1, UIConfig.DISPLAY_BOX_COUNT do
-        local x = start_x + (i - 1) * (BOX_WIDTH + BOX_GAP)
-        local y = box_y
-        love.graphics.rectangle("fill", x, y, BOX_WIDTH, BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
+    -- Draw one continuous box spanning all 5 display box positions
+    local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
+    
+    -- Draw MAX upgrades counter in left corner
+    local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    local max_upgrades = UpgradeNode.get_max_selected_upgrades()
+    love.graphics.setColor(1, 1, 0, 1)
+    local counter_font = love.graphics.newFont("splashfont.otf", 14)
+    love.graphics.setFont(counter_font)
+    local counter_text = #selected_upgrades .. "/" .. max_upgrades
+    love.graphics.print(counter_text, start_x + 8, box_y + 6)
+    
+    -- Clear upgrade box positions
+    upgrade_box_positions = {}
+    
+    -- NOTE: Upgrades are now drawn as flying sprites only - they stay at 128x128 size after landing
+    
+    -- Draw flying upgrade animations (and landed upgrades at 128x128 size)
+    local flying_upgrades = UpgradeNode.get_flying_upgrades()
+    local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    if #flying_upgrades > 0 then
+        local upgrade_units_image = love.graphics.newImage("assets/upgrade_units_UI.png")
+        upgrade_units_image:setFilter("nearest", "nearest")
+        
+        -- Display box dimensions for position calculation
+        local BOX_WIDTH = Config.SLOT_WIDTH
+        local BOX_GAP = Config.SLOT_GAP
+        local start_x_box = Config.PADDING_X + 30
+        local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+        local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
+        local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
+        local usable_width = total_width - 20
+        local spacing_x = usable_width / (5 + 1)
+        local center_y = box_y + BOX_HEIGHT / 2
+        local flying_sprite_size = 128
+        
+        local shift_animations = UpgradeNode.get_shift_animations()
+        
+        for idx, fly_upgrade in ipairs(flying_upgrades) do
+            -- Find this upgrade's current index in selected_upgrades
+            local upgrade_index = nil
+            for i, upgrade_id in ipairs(selected_upgrades) do
+                if upgrade_id == fly_upgrade.upgrade_id then
+                    upgrade_index = i
+                    break
+                end
+            end
+            
+            if upgrade_index then
+                -- Calculate final position in display box based on current index
+                local final_x = start_x_box + 10 + spacing_x * upgrade_index
+                local final_y = center_y - flying_sprite_size / 2
+                
+                -- Apply shift animation offset if this upgrade is shifting
+                local animated_x = final_x
+                for _, shift in ipairs(shift_animations) do
+                    if shift.upgrade_index == upgrade_index then
+                        local progress = shift.elapsed / shift.duration
+                        local eased = 1 - (1 - progress) ^ 3
+                        local from_x = start_x_box + 10 + spacing_x * shift.from_index
+                        local to_x = start_x_box + 10 + spacing_x * shift.to_index
+                        animated_x = from_x + (to_x - from_x) * eased
+                        break
+                    end
+                end
+                
+                local progress = math.min(fly_upgrade.elapsed / fly_upgrade.duration, 1.0)
+                local eased = 1 - (1 - progress) ^ 3
+                
+                -- Interpolate from start to animated final position
+                local current_x = fly_upgrade.start_x + (animated_x - fly_upgrade.start_x) * eased
+                local current_y = fly_upgrade.start_y + (final_y - fly_upgrade.start_y) * eased
+                
+                -- Get upgrade icon (32x32 source size)
+                local icon_size = 32
+                local cols = 5
+                local upgrade_id = fly_upgrade.upgrade_id
+                local col = ((upgrade_id - 1) % cols)
+                local row = math.floor((upgrade_id - 1) / cols)
+                local quad = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, upgrade_units_image:getDimensions())
+                
+                -- Add wobble effect
+                local time = love.timer.getTime()
+                local seed = upgrade_id * 0.7
+                local wobble_x = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
+                local wobble_y = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
+                
+                -- Draw flying icon at 128x128 size with wobble
+                love.graphics.setColor(1, 1, 1, 1)
+                local display_scale = 4
+                love.graphics.draw(upgrade_units_image, quad, current_x + wobble_x, current_y + wobble_y, 0, display_scale, display_scale)
+                
+                -- Store position for click/drag detection (using final position in display box, not animated position)
+                table.insert(upgrade_box_positions, {
+                    x = final_x,
+                    y = final_y,
+                    size = flying_sprite_size,
+                    index = upgrade_index
+                })
+            end
+        end
     end
+end
+
+function UI.drawDisplayBoxes(state)
+    -- Display box constants
+    local BOX_WIDTH = Config.SLOT_WIDTH
+    local BOX_GAP = Config.SLOT_GAP
+    
+    local start_x = Config.PADDING_X + 30
+    local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+    local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
+    
+    -- Draw one continuous box spanning all 5 display box positions
+    local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
+    
+    -- Draw transparent display box border (background will show through with greyscale effect from background renderer)
+    love.graphics.setColor(UIConfig.DISPLAY_BOX_COLOR)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", start_x, box_y, total_width, BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
     
     -- Draw luckykeepsake box
     local lucky_x = Config.BUTTON_START_X

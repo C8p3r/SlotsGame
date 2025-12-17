@@ -192,8 +192,9 @@ function love.update(dt)
     -- Update menu animations
     HomeMenu.update(dt)
     
-    -- Update upgrade nodes
-    UpgradeNode.update(dt)
+    -- Update upgrade nodes (flying animations, shift animations, etc.)
+    UpgradeNode.update_flying_upgrades(dt)
+    UpgradeNode.update_shift_animations(dt)
     
     -- DEBUG: Print state every 60 frames (once per second at 60fps)
     if love.timer.getTime() % 1 < dt then
@@ -342,6 +343,14 @@ function love.draw()
     end
     
     -- 4. Apply Scaling and Draw Game/Menu Content (Everything inside is scaled)
+    -- For failstate, draw full-screen black background first (before push/pop)
+    -- Make it very tall to ensure it covers the entire window including any gaps
+    if game_state == "FAILSTATE" then
+        local w, h = love.graphics.getDimensions()
+        love.graphics.setColor(0, 0, 0, 1.0)
+        love.graphics.rectangle("fill", -1000, -1000, w + 2000, h + 2000)
+    end
+    
     love.graphics.push()
     love.graphics.translate(offset_x, offset_y)
     love.graphics.scale(scale)
@@ -360,8 +369,8 @@ function love.draw()
     
     -- Draw Display Boxes (only in game states, not menu)
     if game_state ~= "MENU" then
-        UI.drawDisplayBoxes()
         local state = Slots.getState()
+        UI.drawDisplayBoxes(state)
         UI.drawBottomOverlays(state)
         local KeepsakeSplash = require("keepsake_splashs")
         KeepsakeSplash.draw(state)
@@ -423,6 +432,9 @@ function love.draw()
         if game_state == "FAILSTATE" then
             Failstate.draw()
         end
+        
+        -- 4j. Draw upgrades layer on foremost (on top of all game elements)
+        UI.drawUpgradesLayer()
     end
     
     love.graphics.pop()
@@ -484,6 +496,31 @@ function love.mousepressed(x, y, button)
             Shop.close()  -- Start shop closing animation
             return
         end
+        
+        -- Check if upgrade box was clicked
+        local box_index, box_center_x, box_center_y = Shop.check_upgrade_box_click(gx, gy)
+        if box_index then
+            local upgrade_id = UpgradeNode.get_box_upgrade(box_index)
+            print("[SHOP] Click detected at box " .. box_index .. ", upgrade_id: " .. tostring(upgrade_id) .. ", center: (" .. string.format("%.1f", box_center_x) .. ", " .. string.format("%.1f", box_center_y) .. ")")
+            
+            -- Check if upgrade is already selected (prevent duplicates)
+            local selected_upgrades = UpgradeNode.get_selected_upgrades()
+            local already_selected = false
+            for _, selected_id in ipairs(selected_upgrades) do
+                if selected_id == upgrade_id then
+                    already_selected = true
+                    break
+                end
+            end
+            
+            if upgrade_id and not already_selected and UpgradeNode.select_upgrade(upgrade_id) then
+                UpgradeNode.add_flying_upgrade(upgrade_id, box_center_x, box_center_y)
+                print("[SHOP] Selected upgrade: " .. upgrade_id)
+            elseif already_selected then
+                print("[SHOP] Upgrade " .. upgrade_id .. " already selected!")
+            end
+            return
+        end
         return
     end
     
@@ -521,8 +558,7 @@ function love.mousepressed(x, y, button)
         return
     end
 
-    if button == 1 and game_state == "GAME" then
-        
+    if game_state == "GAME" and button == 1 then
         -- Check for QTE Click
         if Slots.check_qte_click(gx, gy) then
             -- If handled, return immediately to consume click
@@ -539,13 +575,6 @@ function love.mousepressed(x, y, button)
             return
         end
         
-    end
-end
-
-function love.mousemoved(x, y, dx, dy)
-    if game_state == "GAME" then
-        local gx, gy = get_game_coords(x, y)
-        Lever.mouseMoved(gx, gy)
     end
 end
 
@@ -589,10 +618,7 @@ function love.keypressed(key)
         return
 
     elseif game_state == "MENU" then
-        -- Only allow game start if both difficulty and keepsake are selected
-        if Difficulty.is_selected() and Keepsakes.get() then
-            game_state = "GAME"
-        end
+        -- Do nothing in menu state - let mouse clicks handle menu interactions
         return
 
     elseif game_state == "GAME" then
