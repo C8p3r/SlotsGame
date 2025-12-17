@@ -1,7 +1,7 @@
 -- slot_logic.lua
 local Config = require("conf")
-local Difficulty = require("difficulty")
-local SlotQTE = require("slot_QTE")
+local Difficulty = require("systems.difficulty")
+local SlotQTE = require("game_mechanics.slot_QTE")
 
 local SlotLogic = {} 
 local Slots = nil -- Reference injected by setSlotMachineModule
@@ -136,11 +136,11 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
     
     -- Trigger keepsake splashes for win-modifying effects
     if is_win and initial_win_amount > 0 then
-        local Keepsakes = require("keepsakes")
+        local Keepsakes = require("systems.keepsakes")
         local keepsake_id = Keepsakes.get()
         if keepsake_id then
             local def = Keepsakes.get_definition(keepsake_id)
-            local SlotMachine = require("slot_machine")
+            local SlotMachine = require("game_mechanics.slot_machine")
             
             -- Trigger win_multiplier splash if applicable
             if def.effects.win_multiplier and def.splash_timing == "score" then

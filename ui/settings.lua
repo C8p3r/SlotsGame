@@ -1,9 +1,9 @@
 -- settings.lua
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
-local SlotMachine = require("slot_machine") -- To check jam state
-local Difficulty = require("difficulty") -- For difficulty settings
-local Keepsakes = require("keepsakes") -- For keepsake settings
+local UIConfig = require("ui.ui_config")
+local SlotMachine = require("game_mechanics.slot_machine") -- To check jam state
+local Difficulty = require("systems.difficulty") -- For difficulty settings
+local Keepsakes = require("systems.keepsakes") -- For keepsake settings
 local Settings = {} -- Ensure the module table is initialized
 
 -- State

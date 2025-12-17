@@ -1,14 +1,14 @@
 -- slot_machine.lua
 local Config = require("conf")
-local Dialogue = require("ui/dialogue") 
-local SlotLogic = require("slot_logic") 
-local SlotDraw = require("slot_draw")   
-local SlotUpdate = require("slot_update") 
-local SlotBorders = require("slot_borders")
-local SlotSmoke = require("slot_smoke")
-local SlotQTE = require("slot_QTE")
-local BackgroundRenderer = require("background_renderer")
-local Difficulty = require("difficulty")
+local Dialogue = require("ui_screens.dialogue") 
+local SlotLogic = require("game_mechanics.slot_logic") 
+local SlotDraw = require("game_mechanics.slot_draw")   
+local SlotUpdate = require("game_mechanics.slot_update") 
+local SlotBorders = require("game_mechanics.slot_borders")
+local SlotSmoke = require("systems.slot_smoke")
+local SlotQTE = require("game_mechanics.slot_QTE")
+local BackgroundRenderer = require("systems.background_renderer")
+local Difficulty = require("systems.difficulty")
 
 local SlotMachine = {}
 
@@ -139,7 +139,7 @@ local function calculate_bet_amount()
     local calculated_bet = flat_component + percent_component
     
     -- Apply keepsake spin cost multiplier
-    local Keepsakes = require("keepsakes")
+    local Keepsakes = require("systems.keepsakes")
     local spin_cost_mult = Keepsakes.get_effect("spin_cost_multiplier")
     calculated_bet = math.floor(calculated_bet * spin_cost_mult)
     
@@ -180,7 +180,7 @@ end
 -- Trigger keepsake effect splash
 -- Trigger keepsake splash (delegates to KeepsakeSplash module)
 function SlotMachine.trigger_keepsake_splash(effect_type, effect_value)
-    local KeepsakeSplash = require("keepsake_splashs")
+    local KeepsakeSplash = require("ui_screens.keepsake_splashs")
     KeepsakeSplash.trigger(state, effect_type, effect_value)
 end
 

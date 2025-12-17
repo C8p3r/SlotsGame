@@ -2,13 +2,13 @@
 -- Manages all keepsake splash effects and drawing
 
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
+local UIConfig = require("ui.ui_config")
 
 local KeepsakeSplash = {}
 
 -- Trigger a keepsake splash effect
 function KeepsakeSplash.trigger(state, effect_type, effect_value)
-    local Keepsakes = require("keepsakes")
+    local Keepsakes = require("systems.keepsakes")
     local custom_splash_text = Keepsakes.get_splash_text()
     local splash_timing = Keepsakes.get_splash_timing()
     
@@ -44,7 +44,7 @@ end
 function KeepsakeSplash.draw(state)
     if not state or (state.keepsake_splash_timer or 0) <= 0 then return end
     
-    local Keepsakes = require("keepsakes")
+    local Keepsakes = require("systems.keepsakes")
     local keepsake_id = Keepsakes.get()
     if not keepsake_id then return end
     
@@ -78,7 +78,7 @@ function KeepsakeSplash.draw(state)
     local splash_y = box_y + UIConfig.LUCKY_BOX_HEIGHT / 2 - 65 + wiggle_amount  -- Center over lucky box with wiggle, moved up 50px total
     
     -- Get SlotMachine module for info_font
-    local SlotMachine = require("slot_machine")
+    local SlotMachine = require("game_mechanics.slot_machine")
     
     -- Get keepsake color
     local splash_color = Keepsakes.get_splash_color()

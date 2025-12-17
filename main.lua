@@ -1,29 +1,45 @@
 -- main.lua
 local Config = require("conf")
-local Background = require("background_renderer")
-local Slots = require("slot_machine")
-local SlotDraw = require("slot_draw")
-local Lever = require("lever")
-local Buttons = require("ui/buttons")
-local BaseFlame = require("base_flame")
-local StartScreen = require("ui/start_screen") 
-local SlotBorders = require("slot_borders")
-local HomeMenu = require("home_menu")
-local SlotSmoke = require("slot_smoke") 
-local Settings = require("ui/settings")
-local UI = require("ui/ui")
-local Difficulty = require("difficulty")
-local Keepsakes = require("keepsakes")
-local ParticleSystem = require("particle_system")
-local Shop = require("ui/shop")
-local Failstate = require("ui/failstate")
-local UpgradeNode = require("upgrade_node")
+local Background = require("systems.background_renderer")
+local Slots = require("game_mechanics.slot_machine")
+local SlotDraw = require("game_mechanics.slot_draw")
+local Lever = require("game_mechanics.lever")
+local Buttons = require("ui.buttons")
+local BaseFlame = require("systems.base_flame")
+local StartScreen = require("ui_screens.start_screen") 
+local SlotBorders = require("game_mechanics.slot_borders")
+local HomeMenu = require("ui_screens.home_menu")
+local SlotSmoke = require("systems.slot_smoke") 
+local Settings = require("ui.settings")
+local UI = require("ui.ui")
+local Difficulty = require("systems.difficulty")
+local Keepsakes = require("systems.keepsakes")
+local ParticleSystem = require("systems.particle_system")
+local Shop = require("ui.shop")
+local Failstate = require("ui.failstate")
+local UpgradeNode = require("systems.upgrade_node")
 
 local main_canvas
 local scale = 1
 local offset_x = 0
 local offset_y = 0
 local game_state = "MENU" -- States: "MENU", "GAME", "PAUSE", "SETTINGS", "HOME_MENU_TO_GAME_TRANSITION"
+
+-- Shop upgrade selection state (persists across frames)
+local selected_upgrade_id = nil
+local selected_upgrade_box_index = nil
+local selected_upgrade_position_x = nil
+local selected_upgrade_position_y = nil
+
+-- Display box sell selection state (persists across frames)
+local selected_sell_upgrade_id = nil
+local selected_sell_upgrade_index = nil  -- Which slot in the display (1, 2, or 3)
+local selected_sell_upgrade_position_x = nil
+local selected_sell_upgrade_position_y = nil
+
+-- Hover state for tooltips
+local hovered_upgrade_index = nil
+local hovered_upgrade_id = nil
 
 -- Overlay management for smooth transitions
 local overlay_alpha = 0
@@ -139,7 +155,7 @@ end
 
 -- Reset all game state for a new game
 local function reset_game_state()
-    local Slots = require("slot_machine")
+    local Slots = require("game_mechanics.slot_machine")
     
     -- Reset slot machine state
     Slots.reset_state()
@@ -372,7 +388,7 @@ function love.draw()
         local state = Slots.getState()
         UI.drawDisplayBoxes(state)
         UI.drawBottomOverlays(state)
-        local KeepsakeSplash = require("keepsake_splashs")
+        local KeepsakeSplash = require("ui_screens.keepsake_splashs")
         KeepsakeSplash.draw(state)
         UpgradeNode.draw()
     end
@@ -425,7 +441,13 @@ function love.draw()
         -- 4h. Draw shop menu if open
         if game_state == "SHOP" then
             print("[DRAW] Drawing shop, game_state is: " .. game_state)
-            Shop.draw(Slots.getBankroll(), Slots)
+            Shop.draw(Slots.getBankroll(), Slots, selected_upgrade_id, selected_upgrade_box_index, selected_upgrade_position_x, selected_upgrade_position_y)
+        end
+        
+        -- 4h. Draw shop menu if open
+        if game_state == "SHOP" then
+            print("[DRAW] Drawing shop, game_state is: " .. game_state)
+            Shop.draw(Slots.getBankroll(), Slots, selected_upgrade_id, selected_upgrade_box_index, selected_upgrade_position_x, selected_upgrade_position_y)
         end
         
         -- 4i. Draw failstate menu if active
@@ -435,6 +457,20 @@ function love.draw()
         
         -- 4j. Draw upgrades layer on foremost (on top of all game elements)
         UI.drawUpgradesLayer()
+        
+        -- Draw tooltip and SELL button AFTER upgrades layer so they're on top
+        -- Get upgrade box positions for drawing (now populated after drawUpgradesLayer)
+        local upgrade_box_positions = UI.get_upgrade_box_positions()
+        
+        -- Draw tooltip for hovered upgrade
+        if hovered_upgrade_id then
+            Shop.draw_display_box_tooltip(hovered_upgrade_id, hovered_upgrade_index, upgrade_box_positions)
+        end
+        
+        -- Draw SELL button for selected purchase (available at all stages)
+        if selected_sell_upgrade_id then
+            Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_positions)
+        end
     end
     
     love.graphics.pop()
@@ -468,6 +504,16 @@ end
 function love.mousepressed(x, y, button)
     local gx, gy = get_game_coords(x, y)
     
+    -- DEBUG: Log ALL clicks with game state (to file)
+    local debug_msg = string.format("[DEBUG] CLICK: screen(%.0f, %.0f) -> game(%.0f, %.0f), button=%d, game_state=%s, Shop.is_open()=%s", 
+        x, y, gx, gy, button, game_state, tostring(Shop.is_open()))
+    print(debug_msg)
+    local debug_file = io.open("debug_clicks.log", "a")
+    if debug_file then
+        debug_file:write(debug_msg .. "\n")
+        debug_file:close()
+    end
+    
     if game_state == "MENU" then
         -- Check if START button was clicked
         if check_start_button_click(gx, gy) then
@@ -497,31 +543,147 @@ function love.mousepressed(x, y, button)
             return
         end
         
-        -- Check if upgrade box was clicked
-        local box_index, box_center_x, box_center_y = Shop.check_upgrade_box_click(gx, gy)
-        if box_index then
-            local upgrade_id = UpgradeNode.get_box_upgrade(box_index)
-            print("[SHOP] Click detected at box " .. box_index .. ", upgrade_id: " .. tostring(upgrade_id) .. ", center: (" .. string.format("%.1f", box_center_x) .. ", " .. string.format("%.1f", box_center_y) .. ")")
-            
-            -- Check if upgrade is already selected (prevent duplicates)
-            local selected_upgrades = UpgradeNode.get_selected_upgrades()
-            local already_selected = false
-            for _, selected_id in ipairs(selected_upgrades) do
-                if selected_id == upgrade_id then
-                    already_selected = true
-                    break
-                end
+        -- Check if BUY button was clicked
+        local slide_offset = Shop.get_slide_offset()
+        local popup_action = Shop.check_popup_button_click(gx, gy, selected_upgrade_id, selected_upgrade_box_index, slide_offset)
+        if popup_action == "buy" then
+            if selected_upgrade_id and selected_upgrade_position_x and selected_upgrade_position_y and UpgradeNode.select_upgrade(selected_upgrade_id) then
+                UpgradeNode.add_flying_upgrade(selected_upgrade_id, selected_upgrade_position_x, selected_upgrade_position_y)
+                print("[SHOP] Purchased upgrade: " .. selected_upgrade_id)
             end
+            selected_upgrade_id = nil
+            selected_upgrade_box_index = nil
+            selected_upgrade_position_x = nil
+            selected_upgrade_position_y = nil
+            return
+        end
+        
+        -- Check if upgrade box was clicked to show BUY button or toggle selection
+        local box_index, box_x, box_y = Shop.check_upgrade_box_click(gx, gy)
+        if box_index then
+            local clicked_upgrade_id = UpgradeNode.get_box_upgrade(box_index)
+            print(string.format("[MAIN.mousepressed] Upgrade box %d clicked, upgrade_id=%s, current selection=%s", box_index, tostring(clicked_upgrade_id), tostring(selected_upgrade_id)))
+            -- If clicking the same upgrade that's already selected, deselect it
+            if selected_upgrade_id and selected_upgrade_id == clicked_upgrade_id then
+                print("[MAIN.mousepressed] Same upgrade clicked, deselecting")
+                selected_upgrade_id = nil
+                selected_upgrade_box_index = nil
+                selected_upgrade_position_x = nil
+                selected_upgrade_position_y = nil
+            else
+                -- Set the selection to this new upgrade
+                print(string.format("[MAIN.mousepressed] Setting selection to upgrade %s", tostring(clicked_upgrade_id)))
+                selected_upgrade_id = clicked_upgrade_id
+                selected_upgrade_box_index = box_index
+                selected_upgrade_position_x = box_x
+                selected_upgrade_position_y = box_y
+            end
+            -- Deselect sell selection when clicking shop boxes
+            selected_sell_upgrade_id = nil
+            selected_sell_upgrade_index = nil
+            selected_sell_upgrade_position_x = nil
+            selected_sell_upgrade_position_y = nil
+            return
+        end
+        
+        -- Check if a display box (purchased upgrade) was clicked
+        local sell_index = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
+        if sell_index then
+            local selected_upgrades = UpgradeNode.get_selected_upgrades()
+            local clicked_upgrade_id = selected_upgrades[sell_index]
             
-            if upgrade_id and not already_selected and UpgradeNode.select_upgrade(upgrade_id) then
-                UpgradeNode.add_flying_upgrade(upgrade_id, box_center_x, box_center_y)
-                print("[SHOP] Selected upgrade: " .. upgrade_id)
-            elseif already_selected then
-                print("[SHOP] Upgrade " .. upgrade_id .. " already selected!")
+            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(clicked_upgrade_id), tostring(selected_sell_upgrade_id)))
+            
+            -- If clicking the same upgrade that's already selected for selling, deselect it
+            if selected_sell_upgrade_id and selected_sell_upgrade_id == clicked_upgrade_id then
+                print("[MAIN.mousepressed] Same sell upgrade clicked, deselecting")
+                selected_sell_upgrade_id = nil
+                selected_sell_upgrade_index = nil
+                selected_sell_upgrade_position_x = nil
+                selected_sell_upgrade_position_y = nil
+            else
+                -- Set the sell selection to this upgrade
+                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(clicked_upgrade_id)))
+                selected_sell_upgrade_id = clicked_upgrade_id
+                selected_sell_upgrade_index = sell_index
+                selected_sell_upgrade_position_x = gx
+                selected_sell_upgrade_position_y = gy
+            end
+            -- Deselect buy selection when clicking display boxes
+            selected_upgrade_id = nil
+            selected_upgrade_box_index = nil
+            selected_upgrade_position_x = nil
+            selected_upgrade_position_y = nil
+            return
+        end
+        
+        -- Check if SELL button was clicked on a purchased upgrade
+        local sell_action = Shop.check_sell_button_click(gx, gy, selected_sell_upgrade_index, UI.get_upgrade_box_positions())
+        if sell_action == "sell" then
+            if selected_sell_upgrade_id then
+                print("[SHOP] Selling upgrade: " .. selected_sell_upgrade_id)
+                UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
+            end
+            selected_sell_upgrade_id = nil
+            selected_sell_upgrade_index = nil
+            selected_sell_upgrade_position_x = nil
+            selected_sell_upgrade_position_y = nil
+            return
+        end
+        
+        -- Click anywhere else in shop deselects
+        selected_upgrade_id = nil
+        selected_upgrade_box_index = nil
+        selected_upgrade_position_x = nil
+        selected_upgrade_position_y = nil
+        selected_sell_upgrade_id = nil
+        selected_sell_upgrade_index = nil
+        selected_sell_upgrade_position_x = nil
+        selected_sell_upgrade_position_y = nil
+        return
+    end
+    
+    -- Check for SELL interactions during normal gameplay (not in shop)
+    if game_state == "GAME" and button == 1 then
+        -- Check if SELL button was clicked
+        local sell_action = Shop.check_sell_button_click(gx, gy, selected_sell_upgrade_index, UI.get_upgrade_box_positions())
+        if sell_action == "sell" then
+            if selected_sell_upgrade_id then
+                print("[GAME] Selling upgrade: " .. selected_sell_upgrade_id)
+                UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
+            end
+            selected_sell_upgrade_id = nil
+            selected_sell_upgrade_index = nil
+            selected_sell_upgrade_position_x = nil
+            selected_sell_upgrade_position_y = nil
+            return
+        end
+        
+        -- Check if a display box (purchased upgrade) was clicked
+        local sell_index = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
+        if sell_index then
+            local selected_upgrades = UpgradeNode.get_selected_upgrades()
+            local clicked_upgrade_id = selected_upgrades[sell_index]
+            
+            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(clicked_upgrade_id), tostring(selected_sell_upgrade_id)))
+            
+            -- If clicking the same upgrade that's already selected for selling, deselect it
+            if selected_sell_upgrade_id and selected_sell_upgrade_id == clicked_upgrade_id then
+                print("[MAIN.mousepressed] Same sell upgrade clicked, deselecting")
+                selected_sell_upgrade_id = nil
+                selected_sell_upgrade_index = nil
+                selected_sell_upgrade_position_x = nil
+                selected_sell_upgrade_position_y = nil
+            else
+                -- Set the sell selection to this upgrade
+                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(clicked_upgrade_id)))
+                selected_sell_upgrade_id = clicked_upgrade_id
+                selected_sell_upgrade_index = sell_index
+                selected_sell_upgrade_position_x = gx
+                selected_sell_upgrade_position_y = gy
             end
             return
         end
-        return
     end
     
     if game_state == "FAILSTATE" and button == 1 then
@@ -601,6 +763,20 @@ function love.mousereleased(x, y, button)
     end
 end
 
+function love.mousemoved(x, y, dx, dy)
+    local gx, gy = get_game_coords(x, y)
+    
+    -- Update hover state for purchased upgrades (active in all game states)
+    local upgrade_box_positions = UI.get_upgrade_box_positions()
+    
+    if upgrade_box_positions and #upgrade_box_positions > 0 then
+        hovered_upgrade_index, hovered_upgrade_id = Shop.check_display_box_hover(gx, gy, upgrade_box_positions)
+    else
+        hovered_upgrade_index = nil
+        hovered_upgrade_id = nil
+    end
+end
+
 function love.keypressed(key)
     if key == "f11" then
         local is_fs = love.window.getFullscreen()
@@ -645,5 +821,12 @@ function love.keypressed(key)
         else
             Slots.keypressed(key)
         end
+    end
+end
+
+function love.mousemoved(x, y)
+    if game_state == "GAME" then
+        local gx, gy = get_game_coords(x, y)
+        Lever.mouseMoved(gx, gy)
     end
 end

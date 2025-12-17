@@ -1,7 +1,7 @@
 -- failstate.lua
 -- Menu displayed when player runs out of spins without reaching the goal
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
+local UIConfig = require("ui.ui_config")
 
 local Failstate = {}
 

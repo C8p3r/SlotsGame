@@ -3,10 +3,10 @@
 -- Organizes all UI elements: buttons, indicators, display boxes, and overlays
 
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
-local SlotMachine = require("slot_machine")
-local Shop = require("ui/shop")
-local UpgradeNode = require("upgrade_node")
+local UIConfig = require("ui.ui_config")
+local SlotMachine = require("game_mechanics.slot_machine")
+local Shop = require("ui.shop")
+local UpgradeNode = require("systems.upgrade_node")
 
 local UI = {}
 
@@ -135,7 +135,7 @@ end
 
 function UI.drawIndicatorBoxes(state, Slots, draw_wavy_text, get_wiggle_modifiers)
     -- Streak Multiplier Box
-    local Keepsakes = require("keepsakes")
+    local Keepsakes = require("systems.keepsakes")
     local base_streak_mult = (state.consecutive_wins > 0) and (UIConfig.STREAK_MULTIPLIER_BASE + state.consecutive_wins * UIConfig.STREAK_MULTIPLIER_INCREMENT) or UIConfig.STREAK_MULTIPLIER_BASE
     local streak_mult = base_streak_mult * Keepsakes.get_effect("streak_multiplier")
     draw_multiplier_box(state, Config.MULTIPLIER_STREAK_Y, streak_mult, 
@@ -231,26 +231,45 @@ function UI.drawUpgradesLayer()
     -- Clear upgrade box positions
     upgrade_box_positions = {}
     
+    -- Display box dimensions for position calculation
+    local BOX_WIDTH = Config.SLOT_WIDTH
+    local BOX_GAP = Config.SLOT_GAP
+    local start_x_box = Config.PADDING_X + 30
+    local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+    local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
+    local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
+    local usable_width = total_width - 20
+    local spacing_x = usable_width / (5 + 1)
+    local center_y = box_y + BOX_HEIGHT / 2
+    local flying_sprite_size = 128
+    
     -- NOTE: Upgrades are now drawn as flying sprites only - they stay at 128x128 size after landing
     
     -- Draw flying upgrade animations (and landed upgrades at 128x128 size)
     local flying_upgrades = UpgradeNode.get_flying_upgrades()
     local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    
+    -- Store positions for ALL selected upgrades (flying and landed)
+    -- This ensures hover detection works even after animations complete
+    for upgrade_index, upgrade_id in ipairs(selected_upgrades) do
+        local final_x = start_x_box + 10 + spacing_x * upgrade_index
+        local final_y = center_y - flying_sprite_size / 2
+        
+        -- Store base position for this upgrade (will be used for non-animating upgrades)
+        table.insert(upgrade_box_positions, {
+            base_x = final_x,
+            base_y = final_y,
+            wobble_x = 0,
+            wobble_y = 0,
+            upgrade_id = upgrade_id,
+            index = upgrade_index,
+            display_scale = 4
+        })
+    end
+    
     if #flying_upgrades > 0 then
         local upgrade_units_image = love.graphics.newImage("assets/upgrade_units_UI.png")
         upgrade_units_image:setFilter("nearest", "nearest")
-        
-        -- Display box dimensions for position calculation
-        local BOX_WIDTH = Config.SLOT_WIDTH
-        local BOX_GAP = Config.SLOT_GAP
-        local start_x_box = Config.PADDING_X + 30
-        local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
-        local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
-        local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
-        local usable_width = total_width - 20
-        local spacing_x = usable_width / (5 + 1)
-        local center_y = box_y + BOX_HEIGHT / 2
-        local flying_sprite_size = 128
         
         local shift_animations = UpgradeNode.get_shift_animations()
         
@@ -298,23 +317,86 @@ function UI.drawUpgradesLayer()
                 local quad = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, upgrade_units_image:getDimensions())
                 
                 -- Add wobble effect
-                local time = love.timer.getTime()
-                local seed = upgrade_id * 0.7
-                local wobble_x = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
-                local wobble_y = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
+                local Shop = require("ui.shop")
+                local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(upgrade_id)
                 
                 -- Draw flying icon at 128x128 size with wobble
                 love.graphics.setColor(1, 1, 1, 1)
                 local display_scale = 4
                 love.graphics.draw(upgrade_units_image, quad, current_x + wobble_x, current_y + wobble_y, 0, display_scale, display_scale)
                 
-                -- Store position for click/drag detection (using final position in display box, not animated position)
-                table.insert(upgrade_box_positions, {
-                    x = final_x,
-                    y = final_y,
-                    size = flying_sprite_size,
-                    index = upgrade_index
-                })
+                -- Update position for this upgrade with animated values
+                -- Find the entry we pre-created and update it with animation data
+                for i, pos in ipairs(upgrade_box_positions) do
+                    if pos.index == upgrade_index then
+                        upgrade_box_positions[i] = {
+                            base_x = current_x,
+                            base_y = current_y,
+                            wobble_x = wobble_x,
+                            wobble_y = wobble_y,
+                            upgrade_id = upgrade_id,
+                            index = upgrade_index,
+                            display_scale = display_scale
+                        }
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Draw non-flying (landed) upgrades at their final positions with wobble
+    -- This ensures all upgrades are visible and have position data for hover/click detection
+    if #selected_upgrades > 0 then
+        -- Check which upgrades are already flying
+        local flying_ids = {}
+        for _, fly in ipairs(flying_upgrades) do
+            flying_ids[fly.upgrade_id] = true
+        end
+        
+        -- Draw non-flying upgrades
+        local upgrade_units_image = love.graphics.newImage("assets/upgrade_units_UI.png")
+        upgrade_units_image:setFilter("nearest", "nearest")
+        
+        for upgrade_index, upgrade_id in ipairs(selected_upgrades) do
+            -- Skip if this upgrade is already being drawn by flying animation
+            if not flying_ids[upgrade_id] then
+                -- Calculate final position in display box
+                local final_x = start_x_box + 10 + spacing_x * upgrade_index
+                local final_y = center_y - flying_sprite_size / 2
+                
+                -- Get upgrade icon (32x32 source size)
+                local icon_size = 32
+                local cols = 5
+                local col = ((upgrade_id - 1) % cols)
+                local row = math.floor((upgrade_id - 1) / cols)
+                local quad = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, upgrade_units_image:getDimensions())
+                
+                -- Add wobble effect
+                local Shop = require("ui.shop")
+                local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(upgrade_id)
+                
+                -- Draw icon at 128x128 size with wobble
+                love.graphics.setColor(1, 1, 1, 1)
+                local display_scale = 4
+                love.graphics.draw(upgrade_units_image, quad, final_x + wobble_x, final_y + wobble_y, 0, display_scale, display_scale)
+                
+                -- Update position for this upgrade with current wobble values
+                -- Find the entry we pre-created and update it
+                for i, pos in ipairs(upgrade_box_positions) do
+                    if pos.index == upgrade_index then
+                        upgrade_box_positions[i] = {
+                            base_x = final_x,
+                            base_y = final_y,
+                            wobble_x = wobble_x,
+                            wobble_y = wobble_y,
+                            upgrade_id = upgrade_id,
+                            index = upgrade_index,
+                            display_scale = display_scale
+                        }
+                        break
+                    end
+                end
             end
         end
     end
@@ -345,7 +427,7 @@ function UI.drawDisplayBoxes(state)
     love.graphics.rectangle("fill", lucky_x, lucky_y, UIConfig.LUCKY_BOX_WIDTH, UIConfig.LUCKY_BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
     
     -- Draw keepsake texture or name in lucky box
-    local Keepsakes = require("keepsakes")
+    local Keepsakes = require("systems.keepsakes")
     local keepsake_id = Keepsakes.get()
     
     if keepsake_id then
@@ -661,10 +743,10 @@ function UI.update(dt)
     -- Update gauge needle with twitchy behavior
     gauge_twitch_timer = gauge_twitch_timer + dt
     local current_balance = (love.graphics.getFont() and 1 or 0) -- Dummy to avoid nil  
-    local state = require("slot_machine").getState()
+    local state = require("game_mechanics.slot_machine").getState()
     if state then
         current_balance = state.bankroll or 0
-        local Shop = require("ui/shop")
+        local Shop = require("ui.shop")
         local goal_balance = Shop.get_balance_goal()
         local actual_progress = math.min(1.0, current_balance / goal_balance)
         
@@ -781,6 +863,10 @@ function UI.initialize()
     arriving_tokens = {}
     print("[UI.INITIALIZE] UI initialized! prev_spins_remaining set to: " .. prev_spins_remaining)
     print("[UI.INITIALIZE] departing_tokens and arriving_tokens cleared")
+end
+
+function UI.get_upgrade_box_positions()
+    return upgrade_box_positions
 end
 
 return UI

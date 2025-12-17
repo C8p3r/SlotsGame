@@ -1,8 +1,8 @@
 -- lever.lua
 local Config = require("conf")
-local SlotMachine = require("slot_machine") -- Needed for streak info
-local BackgroundRenderer = require("background_renderer")
-local ParticleSystem = require("particle_system")
+local SlotMachine = require("game_mechanics.slot_machine") -- Needed for streak info
+local BackgroundRenderer = require("systems.background_renderer")
+local ParticleSystem = require("systems.particle_system")
 
 local Lever = {}
 

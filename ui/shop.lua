@@ -1,8 +1,8 @@
 -- shop.lua
 -- Shop menu system for round progression and spin allocation
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
-local UpgradeNode = require("upgrade_node")
+local UIConfig = require("ui.ui_config")
+local UpgradeNode = require("systems.upgrade_node")
 
 local Shop = {}
 
@@ -92,7 +92,7 @@ function Shop.start_new_round()
     is_open = true
     
     -- Reset the balance to initial amount for the new round
-    local SlotMachine = require("slot_machine")
+    local SlotMachine = require("game_mechanics.slot_machine")
     local state = SlotMachine.getState()
     state.bankroll = Config.INITIAL_BANKROLL
 end
@@ -121,6 +121,13 @@ function Shop.close()
     is_shop_closing = true
     is_shop_entering = false
     shop_entrance_timer = shop_entrance_duration  -- Start from end, count down
+end
+
+-- Get the current slide offset for click detection
+function Shop.get_slide_offset()
+    local animation_progress = shop_entrance_duration > 0 and (shop_entrance_timer / shop_entrance_duration) or 1
+    local ease_progress = 1 - (1 - animation_progress) ^ 3
+    return (1 - ease_progress) * Config.GAME_HEIGHT
 end
 
 function Shop.is_open()
@@ -199,6 +206,15 @@ end
 
 -- Check which upgrade box was clicked (1-3)
 function Shop.check_upgrade_box_click(x, y)
+    -- NOTE: x, y are game coordinates, NOT screen coordinates
+    -- The hover detection uses raw screen mouse position, which works
+    -- So we should NOT adjust for slide_offset here
+    
+    local log_msg = string.format("[SHOP.check_upgrade_box_click] x=%.0f, y=%.0f", x, y)
+    print(log_msg)
+    local debug_file = io.open("debug_clicks.log", "a")
+    if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
+    
     local box_width = 200
     local box_height = 150
     local stats_y = SHOP_Y + 80
@@ -207,13 +223,32 @@ function Shop.check_upgrade_box_click(x, y)
     local box_start_x = SHOP_X + (SHOP_W - (box_width * 3 + 20 * 2)) / 2 - 200  -- Center the 3 boxes, moved left 200px total
     local box_gap = 20
     
+    log_msg = string.format("[SHOP.check_upgrade_box_click] box_y_pos=%.0f, box_start_x=%.0f, box_width=%.0f, box_height=%.0f", box_y_pos, box_start_x, box_width, box_height)
+    print(log_msg)
+    debug_file = io.open("debug_clicks.log", "a")
+    if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
+    
     for i = 1, 3 do
         local box_x = box_start_x + (i - 1) * (box_width + box_gap)
+        log_msg = string.format("[SHOP.check_upgrade_box_click] Box %d: x in [%.0f, %.0f], y in [%.0f, %.0f]", i, box_x, box_x + box_width, box_y_pos, box_y_pos + box_height)
+        print(log_msg)
+        debug_file = io.open("debug_clicks.log", "a")
+        if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
         if x >= box_x and x <= box_x + box_width and
            y >= box_y_pos and y <= box_y_pos + box_height then
-            return i, box_x + box_width / 2, box_y_pos + box_height / 2
+            -- Just return the box index - let main.lua handle setting selection state
+            local upgrade_id = UpgradeNode.get_box_upgrade(i)
+            log_msg = string.format("[SHOP] Box %d matched! upgrade_id=%s", i, tostring(upgrade_id))
+            print(log_msg)
+            debug_file = io.open("debug_clicks.log", "a")
+            if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
+            if upgrade_id then
+                -- Return box index and position - main.lua will set the selection state
+                return i, box_x + box_width / 2, box_y_pos + box_height / 2
+            end
         end
     end
+    print("[SHOP.check_upgrade_box_click] No box matched")
     return nil
 end
 
@@ -249,8 +284,15 @@ local function draw_wavy_shop_text(text, x, y, font, color)
     end
 end
 
-function Shop.draw(current_bankroll, SlotMachine)
+function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_upgrade_box_index, selected_upgrade_position_x, selected_upgrade_position_y)
     if not is_open and not is_shop_entering and not is_shop_closing then return end
+    
+    -- DEBUG: Log shop state at draw time
+    local log_msg = string.format("[SHOP.draw] selected_upgrade_id=%s, selected_upgrade_box_index=%s", 
+        tostring(selected_upgrade_id), tostring(selected_upgrade_box_index))
+    print(log_msg)
+    local debug_file = io.open("debug_clicks.log", "a")
+    if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
     
     load_ui_assets()  -- Ensure UI assets are loaded
     
@@ -337,8 +379,12 @@ function Shop.draw(current_bankroll, SlotMachine)
     
     for i = 1, 3 do
         local box_x = box_start_x + (i - 1) * (box_width + box_gap)
+        -- NOTE: mouse_y is in screen space, but we need to compare against screen position
+        -- The boxes are drawn at (box_x, box_y_pos) but visually offset by slide_offset
+        -- So screen position is (box_x, box_y_pos + slide_offset)
+        local screen_box_y = box_y_pos + slide_offset
         local is_hovered = mouse_x >= box_x and mouse_x <= box_x + box_width and
-                           mouse_y >= box_y_pos and mouse_y <= box_y_pos + box_height
+                           mouse_y >= screen_box_y and mouse_y <= screen_box_y + box_height
         
         if is_hovered then
             hovered_box = i
@@ -359,6 +405,12 @@ function Shop.draw(current_bankroll, SlotMachine)
         
         -- Draw the assigned upgrade icon in the center
         local upgrade_id = UpgradeNode.get_box_upgrade(i)
+        
+        -- Add floating up/down animation when selected
+        if upgrade_id == selected_upgrade_id then
+            local float_offset = math.sin(love.timer.getTime() * 3) * 5 - 10  -- Float up 10px from base
+            icon_y = icon_y + float_offset
+        end
         
         -- Check if this upgrade has been selected (currently flying or already in display box)
         local selected_upgrades = UpgradeNode.get_selected_upgrades()
@@ -440,8 +492,90 @@ function Shop.draw(current_bankroll, SlotMachine)
     love.graphics.pop()
     
     -- Draw tooltip after pop so it renders on top of all other assets
+    -- But only if the upgrade hasn't been purchased yet
     if tooltip_box_index then
-        Shop.draw_upgrade_tooltip(tooltip_box_index, tooltip_box_start_x, tooltip_box_y_pos, tooltip_box_width, tooltip_box_height, tooltip_box_gap)
+        local upgrade_id = UpgradeNode.get_box_upgrade(tooltip_box_index)
+        local is_purchased = false
+        
+        -- Check if this upgrade has been selected (purchased)
+        local selected_upgrades = UpgradeNode.get_selected_upgrades()
+        for _, selected_id in ipairs(selected_upgrades) do
+            if selected_id == upgrade_id then
+                is_purchased = true
+                break
+            end
+        end
+        
+        -- Check if it's currently flying
+        if not is_purchased then
+            local flying_upgrades = UpgradeNode.get_flying_upgrades()
+            for _, fly_upgrade in ipairs(flying_upgrades) do
+                if fly_upgrade.upgrade_id == upgrade_id then
+                    is_purchased = true
+                    break
+                end
+            end
+        end
+        
+        -- Only show tooltip if not purchased
+        if not is_purchased then
+            Shop.draw_upgrade_tooltip(tooltip_box_index, tooltip_box_start_x, tooltip_box_y_pos, tooltip_box_width, tooltip_box_height, tooltip_box_gap)
+        end
+    end
+    
+    -- Draw BUY button below selected upgrade if one is selected and not already purchased
+    if selected_upgrade_id and selected_upgrade_box_index then
+        -- Check if the selected upgrade has already been purchased
+        local is_purchased = false
+        local selected_upgrades = UpgradeNode.get_selected_upgrades()
+        for _, selected_id in ipairs(selected_upgrades) do
+            if selected_id == selected_upgrade_id then
+                is_purchased = true
+                break
+            end
+        end
+        
+        -- Check if it's currently flying
+        if not is_purchased then
+            local flying_upgrades = UpgradeNode.get_flying_upgrades()
+            for _, fly_upgrade in ipairs(flying_upgrades) do
+                if fly_upgrade.upgrade_id == selected_upgrade_id then
+                    is_purchased = true
+                    break
+                end
+            end
+        end
+        
+        -- Only draw BUY button if not already purchased
+        if not is_purchased then
+            local box_width = 200
+            local box_height = 150
+            local stats_y = SHOP_Y + 80
+            local line_height = 30
+            local box_y_pos = stats_y + line_height * 4 + 20
+            local box_start_x = SHOP_X + (SHOP_W - (box_width * 3 + 20 * 2)) / 2 - 200
+            local box_gap = 20
+            
+            local box_x = box_start_x + (selected_upgrade_box_index - 1) * (box_width + box_gap)
+            local button_width = 80
+            local button_height = 40
+            local button_x = box_x + (box_width - button_width) / 2
+            local button_y = box_y_pos + box_height + 10 + slide_offset  -- Add slide_offset to visual position
+        
+        -- Draw button with bright color
+        love.graphics.setColor(0.0, 1.0, 0.0, 1.0)  -- Bright green
+        love.graphics.rectangle("fill", button_x, button_y, button_width, button_height)
+        love.graphics.setColor(1, 1, 0, 1)  -- Yellow border
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", button_x, button_y, button_width, button_height)
+        love.graphics.setLineWidth(1)
+        
+        -- Draw button text
+        local button_font = love.graphics.newFont("splashfont.otf", 16)
+        love.graphics.setFont(button_font)
+        love.graphics.setColor(0, 0, 0, 1)  -- Black text
+        love.graphics.printf("BUY", button_x, button_y + 8, button_width, "center")
+        end
     end
 end
 
@@ -539,6 +673,368 @@ function Shop.draw_upgrade_tooltip(box_index, box_start_x, box_y_pos, box_width,
             love.graphics.print(line, tooltip_x + padding, tooltip_y + padding + 59 + (i - 1) * 14)
         end
     end
+end
+
+-- Draw SELL button for purchased upgrades in display boxes
+function Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_positions)
+    if not selected_sell_upgrade_index or not upgrade_box_positions then
+        return
+    end
+    
+    -- Find the box for this upgrade
+    local selected_box = nil
+    for _, box in ipairs(upgrade_box_positions) do
+        if box.index == selected_sell_upgrade_index then
+            selected_box = box
+            break
+        end
+    end
+    
+    if not selected_box then
+        return
+    end
+    
+    local icon_size = 32
+    local scaled_size = icon_size * selected_box.display_scale
+    
+    -- Calculate current wobble using standardized function
+    local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(selected_box.upgrade_id)
+    
+    -- Sprite center position
+    local sprite_center_x = selected_box.base_x + wobble_x + scaled_size / 2
+    local sprite_bottom_y = selected_box.base_y + wobble_y + scaled_size
+    
+    -- SELL button positioned below the sprite
+    local button_width = 80
+    local button_height = 40
+    local button_x = sprite_center_x - button_width / 2
+    local button_y = sprite_bottom_y + 10
+    
+    -- Draw button with red color (indicating selling/removal)
+    love.graphics.setColor(1.0, 0.2, 0.2, 1.0)  -- Bright red
+    love.graphics.rectangle("fill", button_x, button_y, button_width, button_height)
+    love.graphics.setColor(1, 1, 0, 1)  -- Yellow border
+    love.graphics.setLineWidth(3)
+    love.graphics.rectangle("line", button_x, button_y, button_width, button_height)
+    love.graphics.setLineWidth(1)
+    
+    -- Draw button text
+    local button_font = love.graphics.newFont("splashfont.otf", 16)
+    love.graphics.setFont(button_font)
+    love.graphics.setColor(0, 0, 0, 1)  -- Black text
+    love.graphics.printf("SELL", button_x, button_y + 8, button_width, "center")
+end
+
+-- Draw tooltip for purchased upgrade in display boxes
+function Shop.draw_display_box_tooltip(upgrade_id, upgrade_index, upgrade_box_positions)
+    if not upgrade_id or not upgrade_box_positions or not upgrade_index then
+        return
+    end
+    
+    local def = UpgradeNode.get_definition(upgrade_id)
+    if not def then return end
+    
+    -- Find the box for this upgrade
+    local selected_box = nil
+    for _, box in ipairs(upgrade_box_positions) do
+        if box.index == upgrade_index then
+            selected_box = box
+            break
+        end
+    end
+    
+    if not selected_box then
+        return
+    end
+    
+    local Config = require("conf")
+    local game_w, game_h = Config.GAME_WIDTH, Config.GAME_HEIGHT
+    local icon_size = 32
+    local scaled_size = icon_size * selected_box.display_scale
+    
+    -- Calculate current wobble using standardized function
+    local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(selected_box.upgrade_id)
+    
+    -- Sprite center position
+    local sprite_center_x = selected_box.base_x + wobble_x + scaled_size / 2
+    local sprite_top_y = selected_box.base_y + wobble_y
+    
+    -- Position tooltip above the upgrade, centered
+    local tooltip_width = 280
+    local tooltip_height = 125
+    local padding = 10
+    
+    local tooltip_x = sprite_center_x - tooltip_width / 2
+    local tooltip_y = sprite_top_y - tooltip_height - 15
+    
+    -- Keep tooltip on screen before applying drift
+    if tooltip_x < 10 then
+        tooltip_x = 10
+    elseif tooltip_x + tooltip_width > game_w - 10 then
+        tooltip_x = game_w - tooltip_width - 10
+    end
+    if tooltip_y < 20 then
+        tooltip_y = sprite_top_y + scaled_size + 15
+    end
+    
+    -- Add sinusoidal drift (same as shop tooltips)
+    local drift_x = math.sin(love.timer.getTime() * 2) * 8
+    local drift_y = math.sin(love.timer.getTime() * 1.5 + 1) * 6
+    tooltip_x = tooltip_x + drift_x
+    tooltip_y = tooltip_y + drift_y
+    
+    -- Draw background
+    love.graphics.setColor(0.1, 0.1, 0.1, 0.95)
+    love.graphics.rectangle("fill", tooltip_x, tooltip_y, tooltip_width, tooltip_height, 5, 5)
+    
+    -- Draw border
+    love.graphics.setColor(1, 0.8, 0.2, 0.7)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", tooltip_x, tooltip_y, tooltip_width, tooltip_height, 5, 5)
+    love.graphics.setLineWidth(1)
+    
+    -- Draw name
+    love.graphics.setColor(1, 0.8, 0.2, 1)
+    local name_font = love.graphics.newFont("splashfont.otf", 16)
+    love.graphics.setFont(name_font)
+    love.graphics.print(def.name, tooltip_x + padding, tooltip_y + padding)
+    
+    -- Draw effects as text
+    local effects_font = love.graphics.newFont("splashfont.otf", 11)
+    love.graphics.setFont(effects_font)
+    
+    -- Draw benefit line in green
+    love.graphics.setColor(0.2, 1, 0.2, 1)
+    love.graphics.print(def.benefit, tooltip_x + padding, tooltip_y + padding + 25)
+    
+    -- Draw downside line in magenta
+    love.graphics.setColor(1, 0.2, 1, 1)
+    love.graphics.print(def.downside, tooltip_x + padding, tooltip_y + padding + 42)
+    
+    -- Draw flavor line in orange
+    if def.flavor then
+        love.graphics.setColor(1, 0.7, 0.2, 1)
+        love.graphics.setFont(effects_font)
+        local max_width = tooltip_width - padding * 2
+        local wrapped = {}
+        local words = {}
+        for word in def.flavor:gmatch("%S+") do
+            table.insert(words, word)
+        end
+        local current_line = ""
+        for _, word in ipairs(words) do
+            local test_line = current_line == "" and word or current_line .. " " .. word
+            if effects_font:getWidth(test_line) > max_width then
+                table.insert(wrapped, current_line)
+                current_line = word
+            else
+                current_line = test_line
+            end
+        end
+        if current_line ~= "" then
+            table.insert(wrapped, current_line)
+        end
+        
+        for i, line in ipairs(wrapped) do
+            love.graphics.print(line, tooltip_x + padding, tooltip_y + padding + 59 + (i - 1) * 14)
+        end
+    end
+end
+
+-- Check if BUY button was clicked
+function Shop.check_popup_button_click(x, y, selected_upgrade_id, selected_upgrade_box_index, slide_offset)
+    if not selected_upgrade_id or not selected_upgrade_box_index then
+        return nil
+    end
+    
+    local box_width = 200
+    local box_height = 150
+    local stats_y = SHOP_Y + 80
+    local line_height = 30
+    local box_y_pos = stats_y + line_height * 4 + 20
+    local box_start_x = SHOP_X + (SHOP_W - (box_width * 3 + 20 * 2)) / 2 - 200
+    local box_gap = 20
+    
+    local box_x = box_start_x + (selected_upgrade_box_index - 1) * (box_width + box_gap)
+    local button_width = 80
+    local button_height = 40
+    local button_x = box_x + (box_width - button_width) / 2
+    local button_y = box_y_pos + box_height + 10 + slide_offset
+    
+    if x >= button_x and x <= button_x + button_width and
+       y >= button_y and y <= button_y + button_height then
+        return "buy"
+    end
+    
+    return nil
+end
+
+-- Check if click is in the shop upgrade boxes area
+function Shop.is_click_in_shop_boxes(x, y)
+    local box_width = 200
+    local box_height = 150
+    local stats_y = SHOP_Y + 80
+    local line_height = 30
+    local box_y_pos = stats_y + line_height * 4 + 20
+    local box_start_x = SHOP_X + (SHOP_W - (box_width * 3 + 20 * 2)) / 2 - 200
+    local box_gap = 20
+    
+    local total_box_width = (box_width * 3) + (box_gap * 2)
+    
+    -- Check if click is in the shop boxes area
+    if x >= box_start_x and x <= box_start_x + total_box_width and
+       y >= box_y_pos and y <= box_y_pos + box_height then
+        return true
+    end
+    return false
+end
+
+-- ============================================================================
+-- STANDARDIZED UPGRADE HOVER AND BOUNDING BOX CALCULATIONS
+-- ============================================================================
+-- This ensures consistent tooltip behavior across all upgrade items
+
+-- Calculate wobble effect for an upgrade at a given time
+-- Wobble is deterministic based on upgrade_id to ensure consistency
+function Shop.calculate_upgrade_wobble(upgrade_id)
+    local time = love.timer.getTime()
+    local seed = upgrade_id * 0.7
+    local wobble_x = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
+    local wobble_y = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
+    return wobble_x, wobble_y
+end
+
+-- Calculate the bounding box for an upgrade sprite
+-- Returns: actual_x, actual_y, width, height
+function Shop.get_upgrade_bounding_box(box)
+    if not box or not box.base_x or not box.base_y or not box.display_scale then
+        return nil
+    end
+    
+    local icon_size = 32
+    local scaled_size = icon_size * box.display_scale
+    
+    local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(box.upgrade_id)
+    
+    -- Actual drawn position (top-left corner)
+    local drawn_x = box.base_x + wobble_x
+    local drawn_y = box.base_y + wobble_y
+    
+    return drawn_x, drawn_y, scaled_size, scaled_size
+end
+
+-- Check which purchased upgrade the mouse is hovering over
+-- Returns the upgrade index if hovering, nil otherwise
+function Shop.check_display_box_hover(x, y, upgrade_box_positions)
+    if not upgrade_box_positions then
+        return nil
+    end
+    
+    if #upgrade_box_positions == 0 then
+        return nil
+    end
+    
+    for _, box in ipairs(upgrade_box_positions) do
+        -- Verify box has required fields
+        if not box.base_x or not box.base_y or not box.display_scale or not box.upgrade_id or not box.index then
+            goto continue
+        end
+        
+        -- Get bounding box using standardized calculation
+        local drawn_x, drawn_y, width, height = Shop.get_upgrade_bounding_box(box)
+        
+        if not drawn_x then
+            goto continue
+        end
+        
+        -- Check if hover is within the sprite's bounding box
+        if x >= drawn_x and x < drawn_x + width and
+           y >= drawn_y and y < drawn_y + height then
+            return box.index, box.upgrade_id
+        end
+        
+        ::continue::
+    end
+    
+    return nil
+end
+
+-- Check if a display box (purchased upgrade) was clicked
+-- Returns the upgrade index (1-based) if clicked, nil otherwise
+function Shop.check_display_box_click(x, y, upgrade_box_positions)
+    if not upgrade_box_positions then
+        return nil
+    end
+    
+    for _, box in ipairs(upgrade_box_positions) do
+        if not box.base_x or not box.base_y or not box.display_scale or not box.upgrade_id then
+            goto continue
+        end
+        
+        -- Get bounding box using standardized calculation
+        local drawn_x, drawn_y, width, height = Shop.get_upgrade_bounding_box(box)
+        
+        if not drawn_x then
+            goto continue
+        end
+        
+        -- Check if click is within the sprite's bounding box
+        if x >= drawn_x and x <= drawn_x + width and
+           y >= drawn_y and y <= drawn_y + height then
+            return box.index
+        end
+        
+        ::continue::
+    end
+    
+    return nil
+end
+
+-- Check if SELL button was clicked (for purchased upgrades)
+-- Returns "sell" if clicked, nil otherwise
+-- Check if SELL button was clicked (for purchased upgrades)
+-- Returns "sell" if clicked, nil otherwise
+function Shop.check_sell_button_click(x, y, selected_sell_upgrade_index, upgrade_box_positions)
+    if not selected_sell_upgrade_index or not upgrade_box_positions then
+        return nil
+    end
+    
+    -- Find the box for this upgrade
+    local selected_box = nil
+    for _, box in ipairs(upgrade_box_positions) do
+        if box.index == selected_sell_upgrade_index then
+            selected_box = box
+            break
+        end
+    end
+    
+    if not selected_box then
+        return nil
+    end
+    
+    local icon_size = 32
+    local scaled_size = icon_size * selected_box.display_scale
+    
+    -- Calculate current wobble using standardized function
+    local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(selected_box.upgrade_id)
+    
+    -- Sprite center position
+    local sprite_center_x = selected_box.base_x + wobble_x + scaled_size / 2
+    local sprite_bottom_y = selected_box.base_y + wobble_y + scaled_size
+    
+    -- SELL button positioned below the sprite
+    local button_width = 80
+    local button_height = 40
+    local button_x = sprite_center_x - button_width / 2
+    local button_y = sprite_bottom_y + 10
+    
+    -- Check if click is within SELL button bounds
+    if x >= button_x and x <= button_x + button_width and
+       y >= button_y and y <= button_y + button_height then
+        return "sell"
+    end
+    
+    return nil
 end
 
 return Shop

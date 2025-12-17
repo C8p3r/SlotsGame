@@ -2,6 +2,7 @@
 -- Upgrade node system for managing upgradeable game elements
 
 local Config = require("conf")
+local UIConfig = require("ui.ui_config")
 
 local UpgradeNode = {}
 
@@ -182,7 +183,7 @@ end
 
 function UpgradeNode.add_flying_upgrade(upgrade_id, start_x, start_y)
     local Config = require("conf")
-    local UIConfig = require("ui/ui_config")
+    local UIConfig = require("ui.ui_config")
     
     -- Flying sprite will be 128x128 (4x scale of 32x32, matching shop display)
     local flying_sprite_size = 128
@@ -260,6 +261,23 @@ end
 
 function UpgradeNode.remove_selected_upgrade(index)
     table.remove(selected_upgrades, index)
+end
+
+function UpgradeNode.remove_upgrade(upgrade_id)
+    -- Find the index of the upgrade with this ID and remove it
+    for i, id in ipairs(selected_upgrades) do
+        if id == upgrade_id then
+            table.remove(selected_upgrades, i)
+            -- Also remove from flying_upgrades
+            for j = #flying_upgrades, 1, -1 do
+                if flying_upgrades[j].upgrade_id == upgrade_id then
+                    table.remove(flying_upgrades, j)
+                end
+            end
+            return true
+        end
+    end
+    return false
 end
 
 function UpgradeNode.reorder_selected_upgrade(from_index, to_index)

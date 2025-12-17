@@ -1,6 +1,6 @@
 -- slot_QTE.lua
 local Config = require("conf")
-local Difficulty = require("difficulty")
+local Difficulty = require("systems.difficulty")
 
 local SlotQTE = {}
 

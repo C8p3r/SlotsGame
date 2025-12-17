@@ -2,9 +2,10 @@
 -- Main menu screen handling
 
 local Config = require("conf")
-local Difficulty = require("difficulty")
-local Keepsakes = require("keepsakes")
-local StartScreen = require("ui/start_screen")
+local Difficulty = require("systems.difficulty")
+local Keepsakes = require("systems.keepsakes")
+local UIConfig = require("ui.ui_config")
+local StartScreen = require("ui_screens.start_screen")
 
 local HomeMenu = {}
 
@@ -468,7 +469,7 @@ end
 
 -- Check if mouse is hovering over the lucky box during gameplay
 function HomeMenu.get_lucky_box_hover(mouse_x, mouse_y)
-    local UIConfig = require("ui/ui_config")
+    local UIConfig = require("ui.ui_config")
     -- Calculate box_y the same way as drawDisplayBoxes() does
     local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
     local lucky_x = Config.BUTTON_START_X
@@ -490,7 +491,7 @@ function HomeMenu.draw_lucky_box_tooltip(keepsake_id)
     local def = Keepsakes.get_definition(keepsake_id)
     if not def then return end
     
-    local UIConfig = require("ui/ui_config")
+    local UIConfig = require("ui.ui_config")
     local Config = require("conf")
     local game_w, game_h = Config.GAME_WIDTH, Config.GAME_HEIGHT
     

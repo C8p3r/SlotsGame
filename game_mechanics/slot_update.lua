@@ -10,7 +10,7 @@ function SlotUpdate.update(dt, state)
     -- *** STATE TRANSITION DETECTION ***
     -- Detect transition into spinning state
     if state.is_spinning and not state.previous_is_spinning then
-        local Keepsakes = require("keepsakes")
+        local Keepsakes = require("systems.keepsakes")
         local keepsake_id = Keepsakes.get()
         if keepsake_id then
             local def = Keepsakes.get_definition(keepsake_id)
@@ -30,7 +30,7 @@ function SlotUpdate.update(dt, state)
     
     -- Detect transition into QTE state
     if state.qte and state.qte.active and not state.previous_qte_active then
-        local Keepsakes = require("keepsakes")
+        local Keepsakes = require("systems.keepsakes")
         local keepsake_id = Keepsakes.get()
         if keepsake_id then
             local def = Keepsakes.get_definition(keepsake_id)

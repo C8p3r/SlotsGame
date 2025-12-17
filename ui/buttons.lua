@@ -1,7 +1,7 @@
 -- buttons.lua
 local Config = require("conf")
-local UIConfig = require("ui/ui_config")
-local SlotMachine = require("slot_machine") 
+local UIConfig = require("ui.ui_config")
+local SlotMachine = require("game_mechanics.slot_machine") 
 
 local Buttons = {}
 
