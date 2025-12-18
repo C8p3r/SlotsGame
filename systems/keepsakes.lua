@@ -426,7 +426,8 @@ function Keepsakes.get_hovered_keepsake(mouse_x, mouse_y, start_x, start_y, cell
         
         if mouse_x >= x and mouse_x <= x + cell_size and
            mouse_y >= y and mouse_y <= y + cell_size then
-            return i
+            -- Return id and bounding box so callers can place tooltips precisely
+            return i, x, y, cell_size, cell_size
         end
     end
     

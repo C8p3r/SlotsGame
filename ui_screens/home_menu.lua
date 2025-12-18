@@ -6,6 +6,7 @@ local Difficulty = require("systems.difficulty")
 local Keepsakes = require("systems.keepsakes")
 local UIConfig = require("ui.ui_config")
 local StartScreen = require("ui_screens.start_screen")
+local UpgradeNode = require("systems.upgrade_node")
 
 local HomeMenu = {}
 
@@ -30,6 +31,19 @@ function HomeMenu.load_fonts()
     HomeMenu.fonts.title = love.graphics.newFont(font_file, StartScreen.TITLE_SIZE)
     HomeMenu.fonts.prompt = love.graphics.newFont(font_file, StartScreen.PROMPT_SIZE)
     HomeMenu.fonts.start_button = love.graphics.newFont(font_file, 100)
+end
+
+-- Shop seed UI state
+local shop_seed_enabled = false
+local shop_seed_value = ""
+local shop_seed_focused = false
+
+function HomeMenu.get_shop_seed_settings()
+    if shop_seed_enabled then
+        local n = tonumber(shop_seed_value)
+        return true, n
+    end
+    return false, nil
 end
 
 -- Start the menu entrance animation
@@ -277,6 +291,65 @@ function HomeMenu.draw(menu_exit_timer, menu_exit_duration)
     local text_h = HomeMenu.fonts.start_button:getHeight()
     love.graphics.print(start_text, button_x + button_w / 2 - text_w / 2, button_y + button_h / 2 - text_h / 2)
     
+
+    -- Draw smaller shop seed UI below the instructions
+    local inst_font = love.graphics.newFont("splashfont.otf", 14)
+    local inst_text = "SELECT A DIFFICULTY AND KEEPSAKE TO START"
+    local inst_w = inst_font:getWidth(inst_text)
+    local inst_x = w / 2 - inst_w / 2 + 50
+    local inst_y = h * 0.8
+
+    local seed_x = inst_x
+    local seed_y = inst_y + 30
+    local cb_size = 16
+    local input_w = 160
+    local input_h = 22
+
+    -- Checkbox (smaller)
+    love.graphics.setColor(0.15, 0.15, 0.15, 0.95)
+    love.graphics.rectangle("fill", seed_x, seed_y, cb_size, cb_size, 3, 3)
+    if shop_seed_enabled then
+        love.graphics.setColor(0.2, 0.9, 0.2, 1)
+        love.graphics.rectangle("fill", seed_x + 3, seed_y + 3, cb_size - 6, cb_size - 6, 2, 2)
+    end
+    love.graphics.setColor(1, 1, 1, entrance_ease)
+    love.graphics.setFont(love.graphics.newFont("splashfont.otf", 12))
+    love.graphics.print("Seeded Shops", seed_x + cb_size + 8, seed_y - 2)
+
+    -- Seed input box (smaller)
+    local input_x = seed_x
+    local input_y = seed_y + cb_size + 6
+    love.graphics.setColor(0.05, 0.05, 0.05, 0.95)
+    love.graphics.rectangle("fill", input_x, input_y, input_w, input_h, 3, 3)
+    love.graphics.setLineWidth(1)
+    if shop_seed_focused then
+        love.graphics.setColor(0.9, 0.9, 0.2, 1)
+    else
+        love.graphics.setColor(0.5, 0.5, 0.5, 1)
+    end
+    love.graphics.rectangle("line", input_x, input_y, input_w, input_h, 3, 3)
+    love.graphics.setColor(1, 1, 1, 1)
+    local display_text
+    if shop_seed_enabled then
+        display_text = shop_seed_value ~= "" and shop_seed_value or "enter seed"
+    else
+        -- Show a shuffling random string when seeded shops is not selected.
+        local t = love.timer.getTime()
+        local period = 0.12
+        local seed = math.floor(t / period)
+        local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        local localseed = (seed % 2147483646) + 1
+        local s = ""
+        for i = 1, 8 do
+            localseed = (localseed * 16807) % 2147483647
+            local idx = (localseed % #chars) + 1
+            s = s .. chars:sub(idx, idx)
+        end
+        display_text = s
+    end
+    love.graphics.setFont(love.graphics.newFont("splashfont.otf", 12))
+    love.graphics.print(display_text, input_x + 6, input_y + 3)
+
     love.graphics.pop()
 end
 
@@ -305,6 +378,63 @@ function HomeMenu.check_difficulty_click(x, y)
     return false
 end
 
+-- Check seed checkbox and input clicks
+function HomeMenu.check_seed_click(x, y)
+    local w = Config.GAME_WIDTH
+    local h = Config.GAME_HEIGHT
+    local inst_font = love.graphics.newFont("splashfont.otf", 14)
+    local inst_text = "SELECT A DIFFICULTY AND KEEPSAKE TO START"
+    local inst_w = inst_font:getWidth(inst_text)
+    local inst_x = w / 2 - inst_w / 2 + 50
+    local inst_y = h * 0.8
+    local seed_x = inst_x
+    local seed_y = inst_y + 30
+    local cb_x = seed_x
+    local cb_y = seed_y
+    local cb_size = 16
+
+    -- Click toggle checkbox
+    if x >= cb_x and x <= cb_x + cb_size and y >= cb_y and y <= cb_y + cb_size then
+        shop_seed_enabled = not shop_seed_enabled
+        print(string.format("[HOME_MENU] shop_seed_enabled toggled -> %s", tostring(shop_seed_enabled)))
+        return true
+    end
+
+    -- Click input box (smaller)
+    local input_x = cb_x
+    local input_y = cb_y + cb_size + 6
+    local input_w = 160
+    local input_h = 22
+    if x >= input_x and x <= input_x + input_w and y >= input_y and y <= input_y + input_h then
+        shop_seed_focused = true
+        print("[HOME_MENU] shop_seed input focused")
+        return true
+    else
+        shop_seed_focused = false
+    end
+
+    return false
+end
+
+-- Handle key input for seed entry
+function HomeMenu.keypressed(key)
+    if shop_seed_focused then
+        if key == "backspace" then
+            -- remove last char
+            shop_seed_value = shop_seed_value:sub(1, -2)
+        elseif key == "return" or key == "kpenter" then
+            shop_seed_focused = false
+        else
+            -- Accept digits and minus
+            if key:match("^%d$") or key == "-" then
+                shop_seed_value = shop_seed_value .. key
+            end
+        end
+        return true
+    end
+    return false
+end
+
 -- Check if START button was clicked
 function HomeMenu.check_start_button_click(x, y)
     local w = Config.GAME_WIDTH
@@ -324,42 +454,44 @@ end
 function HomeMenu.check_keepsake_click(x, y)
     local w = Config.GAME_WIDTH
     local h = Config.GAME_HEIGHT
+    -- Account for menu entrance/exit horizontal translation so clicks match drawn grid
     local grid_start_x = w * 0.02
     local grid_start_y = h * 0.25 + 50
+
+    local entrance_progress = menu_entrance_duration > 0 and (menu_entrance_timer / menu_entrance_duration) or 1
+    local entrance_ease = 1 - (1 - entrance_progress) ^ 3
+    local entrance_offset = (1 - entrance_ease) * w
+
+    local exit_progress = menu_exit_duration > 0 and (menu_exit_timer / menu_exit_duration) or 0
+    local exit_ease = exit_progress * exit_progress
+    local exit_slide_offset = exit_ease * w
+
+    local menu_offset = entrance_offset - exit_slide_offset
+    grid_start_x = grid_start_x + menu_offset
+
     return Keepsakes.check_click(x, y, grid_start_x, grid_start_y, 96, 32)
 end
 
 -- Draw keepsake tooltip on hover
-function HomeMenu.draw_keepsake_tooltip(hovered_id)
+function HomeMenu.draw_keepsake_tooltip(hovered_id, keepsake_x, keepsake_y, item_size, item_h)
     if not hovered_id then return end
-    
+
     local def = Keepsakes.get_definition(hovered_id)
     if not def then return end
-    
+
     local game_w, game_h = Config.GAME_WIDTH, Config.GAME_HEIGHT
-    
-    -- Calculate keepsake grid position
-    local grid_start_x = game_w * 0.02
-    local grid_start_y = game_h * 0.25 + 50
-    local item_size = 96
-    local grid_cols = 4
-    
-    -- Calculate position of the hovered keepsake in the grid
-    local idx = hovered_id - 1
-    local col = idx % grid_cols
-    local row = math.floor(idx / grid_cols)
-    
-    local keepsake_x = grid_start_x + col * item_size
-    local keepsake_y = grid_start_y + row * item_size
-    local keepsake_center_x = keepsake_x + item_size / 2
-    
+
+    -- Use provided bounding box (keepsake_x, keepsake_y, item_size)
+    item_size = item_size or 96
+    local keepsake_center_x = (keepsake_x or 0) + item_size / 2
+
     -- Position tooltip above the keepsake item, centered
     local tooltip_width = 280
     local tooltip_height = 125
     local padding = 10
-    
+
     local tooltip_x = keepsake_center_x - tooltip_width / 2
-    local tooltip_y = keepsake_y
+    local tooltip_y = (keepsake_y or 0) - tooltip_height
     
     -- Keep tooltip on screen before applying drift
     if tooltip_x < 10 then
@@ -380,19 +512,19 @@ function HomeMenu.draw_keepsake_tooltip(hovered_id)
     -- Draw background
     love.graphics.setColor(0.1, 0.1, 0.1, 0.95)
     love.graphics.rectangle("fill", tooltip_x, tooltip_y, tooltip_width, tooltip_height, 5, 5)
-    
+
     -- Draw border
     love.graphics.setColor(1, 1, 0, 0.7)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", tooltip_x, tooltip_y, tooltip_width, tooltip_height, 5, 5)
     love.graphics.setLineWidth(1)
-    
+
     -- Draw name
     love.graphics.setColor(1, 1, 0, 1)
     local name_font = love.graphics.newFont("splashfont.otf", 16)
     love.graphics.setFont(name_font)
     love.graphics.print(def.name, tooltip_x + padding, tooltip_y + padding)
-    
+
     -- Draw effects as text
     local effects_font = love.graphics.newFont("splashfont.otf", 11)
     love.graphics.setFont(effects_font)

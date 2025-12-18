@@ -1,5 +1,6 @@
 -- main.lua
 local Config = require("conf")
+local UIConfig = require("ui.ui_config")
 local Background = require("systems.background_renderer")
 local Slots = require("game_mechanics.slot_machine")
 local SlotDraw = require("game_mechanics.slot_draw")
@@ -18,6 +19,7 @@ local ParticleSystem = require("systems.particle_system")
 local Shop = require("ui.shop")
 local Failstate = require("ui.failstate")
 local UpgradeNode = require("systems.upgrade_node")
+local UpgradeTooltips = require("ui.upgrade_tooltips")
 
 local main_canvas
 local scale = 1
@@ -40,6 +42,18 @@ local selected_sell_upgrade_position_y = nil
 -- Hover state for tooltips
 local hovered_upgrade_index = nil
 local hovered_upgrade_id = nil
+
+-- Drag and drop state for display case upgrades
+local dragging_sprite = nil  -- Currently dragged sprite object
+local drag_offset_x = 0  -- Offset from sprite center to mouse
+local drag_offset_y = 0
+local original_drag_index = nil  -- Original index before drag started
+local original_drag_x = 0  -- Original x position before drag started
+local original_drag_y = 0  -- Original y position before drag started
+local potential_drag_sprite = nil  -- Sprite that was clicked (may become drag or click)
+local potential_drag_x = 0  -- Initial click x position
+local potential_drag_y = 0  -- Initial click y position
+local drag_threshold = 10  -- Pixels to move before committing to drag
 
 -- Overlay management for smooth transitions
 local overlay_alpha = 0
@@ -74,9 +88,22 @@ local function draw_menu_content()
     local scale = math.min(love.graphics.getWidth() / w, love.graphics.getHeight() / h)
     local game_mouse_x = (mouse_x - (love.graphics.getWidth() - w * scale) / 2) / scale
     local game_mouse_y = (mouse_y - (love.graphics.getHeight() - h * scale) / 2) / scale
-    
-    local hovered_id = Keepsakes.get_hovered_keepsake(game_mouse_x, game_mouse_y, w * 0.02, h * 0.25 + 50, 96, 32)
-    HomeMenu.draw_keepsake_tooltip(hovered_id)
+    -- Compute the same horizontal menu offset used during drawing so hover tests match
+    local entrance_progress = entrance_duration > 0 and (entrance_timer / entrance_duration) or 1
+    local entrance_ease = 1 - (1 - entrance_progress) ^ 3
+    local entrance_offset = (1 - entrance_ease) * w
+
+    local exit_progress = exit_duration > 0 and (exit_timer / exit_duration) or 0
+    local exit_ease = exit_progress * exit_progress
+    local exit_slide_offset = exit_ease * w
+
+    local menu_offset = entrance_offset - exit_slide_offset
+
+    local grid_start_x = w * 0.02 + menu_offset
+    local grid_start_y = h * 0.25 + 50
+
+    local hovered_id, ks_x, ks_y, ks_w, ks_h = Keepsakes.get_hovered_keepsake(game_mouse_x, game_mouse_y, grid_start_x, grid_start_y, 96, 32)
+    HomeMenu.draw_keepsake_tooltip(hovered_id, ks_x, ks_y, ks_w, ks_h)
     
 
 end
@@ -169,6 +196,9 @@ local function reset_game_state()
     -- Reset gems currency
     Shop.reset_gems()
     
+    -- Clear purchased upgrades for new game
+    UpgradeNode.clear_selected_upgrades()
+    
     -- Reset keepsake splash state
     local state = Slots.getState()
     if state then
@@ -208,9 +238,45 @@ function love.update(dt)
     -- Update menu animations
     HomeMenu.update(dt)
     
-    -- Update upgrade nodes (flying animations, shift animations, etc.)
-    UpgradeNode.update_flying_upgrades(dt)
-    UpgradeNode.update_shift_animations(dt)
+    -- Update upgrade sprites (handles state transitions and animations)
+    UpgradeNode.update(dt)
+    
+    -- Safety check: ensure all sprites have valid indices and states
+    local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    for i, sprite in ipairs(selected_upgrades) do
+        if not sprite.index or sprite.index < 1 or sprite.index > #selected_upgrades then
+            sprite.index = i  -- Force valid index
+        end
+        
+        -- Detect orphaned shifting animations and force completion
+        if sprite.state == "shifting" then
+            if not sprite.animation_duration or sprite.animation_duration == 0 then
+                -- Shift animation has no duration, force it to complete
+                sprite.state = "owned"
+                sprite.animation_progress = 0
+            elseif sprite.animation_progress and sprite.animation_progress > sprite.animation_duration then
+                -- Animation exceeded duration, complete it immediately
+                sprite.state = "owned"
+                sprite.x = sprite.target_x
+                sprite.y = sprite.target_y
+                sprite.animation_progress = 0
+                sprite.animation_duration = 0
+            end
+        end
+    end
+    
+    -- If dragging sprite is somehow still active but mouse isn't pressed, snap it back
+    if dragging_sprite then
+        local buttons = love.mouse.isDown(1)
+        if not buttons then
+            -- Mouse is not pressed, snap the sprite back into place
+            UpgradeNode.reposition_owned_upgrades()
+            dragging_sprite = nil
+            original_drag_index = nil
+            original_drag_x = 0
+            original_drag_y = 0
+        end
+    end
     
     -- DEBUG: Print state every 60 frames (once per second at 60fps)
     if love.timer.getTime() % 1 < dt then
@@ -383,8 +449,8 @@ function love.draw()
     -- Draw Smoke behind the main slots but after base flame
     SlotSmoke.draw()
     
-    -- Draw Display Boxes (only in game states, not menu)
-    if game_state ~= "MENU" then
+    -- Draw Display Boxes (only in game states, not menu, not failstate)
+    if game_state ~= "MENU" and game_state ~= "FAILSTATE" then
         local state = Slots.getState()
         UI.drawDisplayBoxes(state)
         UI.drawBottomOverlays(state)
@@ -455,21 +521,16 @@ function love.draw()
             Failstate.draw()
         end
         
-        -- 4j. Draw upgrades layer on foremost (on top of all game elements)
-        UI.drawUpgradesLayer()
-        
-        -- Draw tooltip and SELL button AFTER upgrades layer so they're on top
-        -- Get upgrade box positions for drawing (now populated after drawUpgradesLayer)
-        local upgrade_box_positions = UI.get_upgrade_box_positions()
-        
-        -- Draw tooltip for hovered upgrade
-        if hovered_upgrade_id then
-            Shop.draw_display_box_tooltip(hovered_upgrade_id, hovered_upgrade_index, upgrade_box_positions)
-        end
-        
-        -- Draw SELL button for selected purchase (available at all stages)
-        if selected_sell_upgrade_id then
-            Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_positions)
+        -- 4j. Draw upgrades layer on foremost (on top of all game elements) - NOT in failstate
+        if game_state ~= "FAILSTATE" then
+            UI.drawUpgradesLayer()
+            
+            -- Draw SELL button for selected purchase (available at all stages except failstate)
+            -- Get upgrade box positions for drawing (now populated after drawUpgradesLayer)
+            local upgrade_box_positions = UI.get_upgrade_box_positions()
+            if selected_sell_upgrade_id or Shop.is_sell_animating() then
+                Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_positions)
+            end
         end
     end
     
@@ -495,10 +556,106 @@ function love.draw()
         love.graphics.setColor(0, 0, 0, 1)
         love.graphics.rectangle("fill", w_half + right_offset, 0, w_half, h)
     end
+    
+    -- Draw tooltips LAST so they always appear on top of everything
+    if game_state ~= "MENU_EXIT" then
+        local upgrade_box_positions = UI.get_upgrade_box_positions()
+        -- Re-apply game-space transform so tooltips (which expect game coords) render correctly
+        love.graphics.push()
+        love.graphics.translate(offset_x, offset_y)
+        love.graphics.scale(scale)
+        UpgradeTooltips.draw_all(upgrade_box_positions)
+        love.graphics.pop()
+    end
 end
 
 local function get_game_coords(x, y)
     return (x - offset_x) / scale, (y - offset_y) / scale
+end
+
+-- Reorder sprites in selected_upgrades array based on x positions
+local function reorder_selected_upgrades()
+    local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    
+    if not selected_upgrades or #selected_upgrades == 0 then
+        return
+    end
+    
+    -- Sort by x position (left to right) with current index as tiebreaker for stability
+    table.sort(selected_upgrades, function(a, b)
+        if math.abs(a.x - b.x) > 5 then  -- Only reorder if x differs by more than 5 pixels
+            return a.x < b.x
+        end
+        -- Use current index as tiebreaker for stability
+        return (a.index or 999) < (b.index or 999)
+    end)
+    
+    -- Update indices (1-based, ensure all are valid)
+    for i, sprite in ipairs(selected_upgrades) do
+        sprite.index = i
+    end
+end
+
+-- Check if click is on an owned display sprite and mark as potential drag
+local function try_start_upgrade_drag(gx, gy)
+    local upgrade_box_positions = UI.get_upgrade_box_positions()
+    if not upgrade_box_positions then
+        return false
+    end
+    
+    for _, box in ipairs(upgrade_box_positions) do
+        -- Allow clicking of owned, hovered, or shifting sprites
+        if box.sprite and (box.sprite.state == "owned" or box.sprite.state == "hovered" or box.sprite.state == "shifting") then
+            -- Check if click is within this sprite's bounding box
+            if gx >= box.x and gx < box.x + box.width and
+               gy >= box.y and gy < box.y + box.height then
+                -- Mark as potential drag (will commit to drag once mouse moves)
+                potential_drag_sprite = box.sprite
+                potential_drag_x = gx
+                potential_drag_y = gy
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Commit to actual dragging once mouse moves beyond threshold
+local function commit_to_drag(gx, gy)
+    if not potential_drag_sprite then
+        return false
+    end
+    
+    -- Check if mouse has moved beyond the drag threshold
+    local dx = math.abs(gx - potential_drag_x)
+    local dy = math.abs(gy - potential_drag_y)
+    
+    if dx > drag_threshold or dy > drag_threshold then
+        -- Committed to drag - find the sprite's info
+        local upgrade_box_positions = UI.get_upgrade_box_positions()
+        if upgrade_box_positions then
+            for _, box in ipairs(upgrade_box_positions) do
+                if box.sprite == potential_drag_sprite then
+                    -- Start actual dragging
+                    dragging_sprite = box.sprite
+                    original_drag_index = box.index
+                    original_drag_x = box.sprite.x
+                    original_drag_y = box.sprite.y
+                    -- Calculate offset from sprite center to mouse
+                    local sprite_center_x = box.x + box.width / 2
+                    local sprite_center_y = box.y + box.height / 2
+                    drag_offset_x = gx - sprite_center_x
+                    drag_offset_y = gy - sprite_center_y
+                    
+                    potential_drag_sprite = nil
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
 end
 
 function love.mousepressed(x, y, button)
@@ -515,10 +672,22 @@ function love.mousepressed(x, y, button)
     end
     
     if game_state == "MENU" then
+        -- Handle seed UI clicks first
+        if HomeMenu.check_seed_click and HomeMenu.check_seed_click(gx, gy) then
+            return
+        end
+
         -- Check if START button was clicked
         if check_start_button_click(gx, gy) then
             HomeMenu.start_exit_animation()  -- Start menu exit animation
             game_state = "HOME_MENU_TO_GAME_TRANSITION"
+            -- Apply shop seed settings (if any) before initializing the shop
+            local seeded, seed_val = HomeMenu.get_shop_seed_settings()
+            if seeded then
+                UpgradeNode.set_shop_seed(seed_val)
+            else
+                UpgradeNode.set_shop_seed(nil)
+            end
             Shop.initialize(Slots.getBankroll())  -- Initialize shop system
             UI.initialize()  -- Initialize UI animations
             return
@@ -535,6 +704,25 @@ function love.mousepressed(x, y, button)
         end
         return
     end
+
+    -- If a sell popup is active, a click should close it unless the click is on the SELL button
+    if button == 1 and selected_sell_upgrade_id then
+        local is_on_sell_button = Shop.check_sell_button_click(gx, gy, selected_sell_upgrade_index, UI.get_upgrade_box_positions())
+        if not is_on_sell_button then
+            selected_sell_upgrade_id = nil
+            selected_sell_upgrade_index = nil
+            selected_sell_upgrade_position_x = nil
+            selected_sell_upgrade_position_y = nil
+            Shop.close_sell_popup()
+            return
+        end
+        -- if it is on the sell button, allow normal flow to handle it
+    end
+    
+    -- Try to start dragging a display case sprite (available in all game states)
+    if button == 1 and try_start_upgrade_drag(gx, gy) then
+        return
+    end
     
     if game_state == "SHOP" and button == 1 then
         -- Check if NEXT ROUND button was clicked
@@ -547,9 +735,25 @@ function love.mousepressed(x, y, button)
         local slide_offset = Shop.get_slide_offset()
         local popup_action = Shop.check_popup_button_click(gx, gy, selected_upgrade_id, selected_upgrade_box_index, slide_offset)
         if popup_action == "buy" then
-            if selected_upgrade_id and selected_upgrade_position_x and selected_upgrade_position_y and UpgradeNode.select_upgrade(selected_upgrade_id) then
-                UpgradeNode.add_flying_upgrade(selected_upgrade_id, selected_upgrade_position_x, selected_upgrade_position_y)
-                print("[SHOP] Purchased upgrade: " .. selected_upgrade_id)
+            if selected_upgrade_id and selected_upgrade_position_x and selected_upgrade_position_y then
+                -- Calculate cost and check if player has enough gems BEFORE selecting
+                local cost = UpgradeNode.get_buy_cost(selected_upgrade_id)
+                local current_gems = Shop.get_gems()
+
+                if current_gems < cost then
+                    -- Player can't afford it; ignore the click (do nothing)
+                    print(string.format("[SHOP] Buy blocked: upgrade %d costs %d gems, player has %d", selected_upgrade_id, cost, current_gems))
+                    return
+                end
+
+                -- Enough gems: perform the purchase
+                if UpgradeNode.select_upgrade(selected_upgrade_id) then
+                    Shop.add_gems(-cost)
+                    print(string.format("[SHOP] Purchased upgrade %d for %d gems (remaining: %d)", selected_upgrade_id, cost, Shop.get_gems()))
+                    Shop.remove_shop_sprite(selected_upgrade_id)
+                    UpgradeNode.reposition_owned_upgrades()
+                    UpgradeNode.add_flying_upgrade(selected_upgrade_id, selected_upgrade_position_x, selected_upgrade_position_y)
+                end
             end
             selected_upgrade_id = nil
             selected_upgrade_box_index = nil
@@ -583,31 +787,31 @@ function love.mousepressed(x, y, button)
             selected_sell_upgrade_index = nil
             selected_sell_upgrade_position_x = nil
             selected_sell_upgrade_position_y = nil
+            Shop.close_sell_popup()
             return
         end
         
         -- Check if a display box (purchased upgrade) was clicked
-        local sell_index = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
+        local sell_index, sell_upgrade_id = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
         if sell_index then
-            local selected_upgrades = UpgradeNode.get_selected_upgrades()
-            local clicked_upgrade_id = selected_upgrades[sell_index]
-            
-            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(clicked_upgrade_id), tostring(selected_sell_upgrade_id)))
+            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(sell_upgrade_id), tostring(selected_sell_upgrade_id)))
             
             -- If clicking the same upgrade that's already selected for selling, deselect it
-            if selected_sell_upgrade_id and selected_sell_upgrade_id == clicked_upgrade_id then
+            if selected_sell_upgrade_id and selected_sell_upgrade_id == sell_upgrade_id then
                 print("[MAIN.mousepressed] Same sell upgrade clicked, deselecting")
                 selected_sell_upgrade_id = nil
                 selected_sell_upgrade_index = nil
                 selected_sell_upgrade_position_x = nil
                 selected_sell_upgrade_position_y = nil
+                Shop.close_sell_popup()
             else
                 -- Set the sell selection to this upgrade
-                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(clicked_upgrade_id)))
-                selected_sell_upgrade_id = clicked_upgrade_id
+                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(sell_upgrade_id)))
+                selected_sell_upgrade_id = sell_upgrade_id
                 selected_sell_upgrade_index = sell_index
                 selected_sell_upgrade_position_x = gx
                 selected_sell_upgrade_position_y = gy
+                Shop.open_sell_popup()
             end
             -- Deselect buy selection when clicking display boxes
             selected_upgrade_id = nil
@@ -621,13 +825,18 @@ function love.mousepressed(x, y, button)
         local sell_action = Shop.check_sell_button_click(gx, gy, selected_sell_upgrade_index, UI.get_upgrade_box_positions())
         if sell_action == "sell" then
             if selected_sell_upgrade_id then
-                print("[SHOP] Selling upgrade: " .. selected_sell_upgrade_id)
+                local sell_value = UpgradeNode.get_sell_value(selected_sell_upgrade_id)
+                Shop.add_gems(sell_value)
+                print(string.format("[SHOP] Sold upgrade %d for %d gems (total gems: %d)", selected_sell_upgrade_id, sell_value, Shop.get_gems()))
                 UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
+                -- Reposition remaining upgrades after sale
+                UpgradeNode.reposition_owned_upgrades()
             end
             selected_sell_upgrade_id = nil
             selected_sell_upgrade_index = nil
             selected_sell_upgrade_position_x = nil
             selected_sell_upgrade_position_y = nil
+            Shop.close_sell_popup()
             return
         end
         
@@ -636,39 +845,67 @@ function love.mousepressed(x, y, button)
         selected_upgrade_box_index = nil
         selected_upgrade_position_x = nil
         selected_upgrade_position_y = nil
-        selected_sell_upgrade_id = nil
-        selected_sell_upgrade_index = nil
-        selected_sell_upgrade_position_x = nil
-        selected_sell_upgrade_position_y = nil
+            selected_sell_upgrade_id = nil
+            selected_sell_upgrade_index = nil
+            selected_sell_upgrade_position_x = nil
+            selected_sell_upgrade_position_y = nil
+            Shop.close_sell_popup()
         return
     end
     
     -- Check for SELL interactions during normal gameplay (not in shop)
     if game_state == "GAME" and button == 1 then
+        -- Check if a display box (purchased upgrade) was clicked
+        local sell_index, sell_upgrade_id = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
+        if sell_index then
+            print(string.format("[MAIN.mousepressed GAME] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(sell_upgrade_id), tostring(selected_sell_upgrade_id)))
+            
+            -- If clicking the same upgrade that's already selected for selling, deselect it
+            if selected_sell_upgrade_id and selected_sell_upgrade_id == sell_upgrade_id then
+                print("[MAIN.mousepressed GAME] Same sell upgrade clicked, deselecting")
+                selected_sell_upgrade_id = nil
+                selected_sell_upgrade_index = nil
+                selected_sell_upgrade_position_x = nil
+                selected_sell_upgrade_position_y = nil
+                Shop.close_sell_popup()
+            else
+                -- Set the sell selection to this upgrade
+                print(string.format("[MAIN.mousepressed GAME] Setting sell selection to upgrade %s", tostring(sell_upgrade_id)))
+                selected_sell_upgrade_id = sell_upgrade_id
+                selected_sell_upgrade_index = sell_index
+                selected_sell_upgrade_position_x = gx
+                selected_sell_upgrade_position_y = gy
+                Shop.open_sell_popup()
+            end
+            return
+        end
+        
         -- Check if SELL button was clicked
         local sell_action = Shop.check_sell_button_click(gx, gy, selected_sell_upgrade_index, UI.get_upgrade_box_positions())
         if sell_action == "sell" then
             if selected_sell_upgrade_id then
-                print("[GAME] Selling upgrade: " .. selected_sell_upgrade_id)
+                local sell_value = UpgradeNode.get_sell_value(selected_sell_upgrade_id)
+                Shop.add_gems(sell_value)
+                print(string.format("[GAME] Sold upgrade %d for %d gems (total gems: %d)", selected_sell_upgrade_id, sell_value, Shop.get_gems()))
                 UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
+                -- Reposition remaining upgrades after sale
+                UpgradeNode.reposition_owned_upgrades()
             end
             selected_sell_upgrade_id = nil
             selected_sell_upgrade_index = nil
             selected_sell_upgrade_position_x = nil
             selected_sell_upgrade_position_y = nil
+            Shop.close_sell_popup()
             return
         end
         
         -- Check if a display box (purchased upgrade) was clicked
-        local sell_index = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
+        local sell_index, sell_upgrade_id = Shop.check_display_box_click(gx, gy, UI.get_upgrade_box_positions())
         if sell_index then
-            local selected_upgrades = UpgradeNode.get_selected_upgrades()
-            local clicked_upgrade_id = selected_upgrades[sell_index]
-            
-            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(clicked_upgrade_id), tostring(selected_sell_upgrade_id)))
+            print(string.format("[MAIN.mousepressed] Display box %d clicked, upgrade_id=%s, current sell selection=%s", sell_index, tostring(sell_upgrade_id), tostring(selected_sell_upgrade_id)))
             
             -- If clicking the same upgrade that's already selected for selling, deselect it
-            if selected_sell_upgrade_id and selected_sell_upgrade_id == clicked_upgrade_id then
+            if selected_sell_upgrade_id and selected_sell_upgrade_id == sell_upgrade_id then
                 print("[MAIN.mousepressed] Same sell upgrade clicked, deselecting")
                 selected_sell_upgrade_id = nil
                 selected_sell_upgrade_index = nil
@@ -676,8 +913,8 @@ function love.mousepressed(x, y, button)
                 selected_sell_upgrade_position_y = nil
             else
                 -- Set the sell selection to this upgrade
-                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(clicked_upgrade_id)))
-                selected_sell_upgrade_id = clicked_upgrade_id
+                print(string.format("[MAIN.mousepressed] Setting sell selection to upgrade %s", tostring(sell_upgrade_id)))
+                selected_sell_upgrade_id = sell_upgrade_id
                 selected_sell_upgrade_index = sell_index
                 selected_sell_upgrade_position_x = gx
                 selected_sell_upgrade_position_y = gy
@@ -744,6 +981,66 @@ function love.mousereleased(x, y, button)
     if game_state == "MENU" or game_state == "PAUSE" or game_state == "SETTINGS" then
         return
     end
+    
+    -- Handle potential drag that never committed (treated as a click)
+    if potential_drag_sprite and button == 1 then
+        local gx, gy = get_game_coords(x, y)
+        
+        -- Check if mouse barely moved (not a significant drag)
+        local DRAG_THRESHOLD = 10
+        local distance_x = math.abs(gx - potential_drag_x)
+        local distance_y = math.abs(gy - potential_drag_y)
+        local distance = math.sqrt(distance_x * distance_x + distance_y * distance_y)
+        
+        if distance < DRAG_THRESHOLD then
+            -- Treat as click - find the upgrade info and select it
+            local upgrade_box_positions = UI.get_upgrade_box_positions()
+            if upgrade_box_positions then
+                for _, box in ipairs(upgrade_box_positions) do
+                    if box.sprite == potential_drag_sprite then
+                        -- Select this upgrade to show the sell button
+                        selected_sell_upgrade_id = box.upgrade_id
+                        selected_sell_upgrade_index = box.index
+                        selected_sell_upgrade_position_x = gx
+                        selected_sell_upgrade_position_y = gy
+                        Shop.open_sell_popup()
+                        break
+                    end
+                end
+            end
+        end
+        
+        -- Clear potential drag
+        potential_drag_sprite = nil
+        return
+    end
+    
+    -- End drag if one is active
+    if dragging_sprite and button == 1 then
+        -- Validate that the sprite still exists in selected_upgrades
+        local found = false
+        local selected_upgrades = UpgradeNode.get_selected_upgrades()
+        for _, sprite in ipairs(selected_upgrades) do
+            if sprite == dragging_sprite then
+                found = true
+                break
+            end
+        end
+        
+        if found then
+            -- Step 1: Reorder sprites based on their current x positions (left to right)
+            reorder_selected_upgrades()
+            
+            -- Step 2: Snap all sprites to their correct positions based on new indices
+            UpgradeNode.reposition_owned_upgrades()
+        end
+        
+        dragging_sprite = nil
+        original_drag_index = nil
+        original_drag_x = 0
+        original_drag_y = 0
+        return
+    end
 
     if button == 1 and game_state == "GAME" then
         local gx, gy = get_game_coords(x, y)
@@ -766,6 +1063,48 @@ end
 function love.mousemoved(x, y, dx, dy)
     local gx, gy = get_game_coords(x, y)
     
+    -- Check if potential drag should commit to actual drag
+    if potential_drag_sprite and not dragging_sprite then
+        if commit_to_drag(gx, gy) then
+            -- Drag committed, will be handled below
+        end
+    end
+    
+    -- Handle dragging of display case sprites
+    if dragging_sprite then
+        -- Update sprite position to follow mouse (with offset)
+        local sprite_center_x = gx - drag_offset_x
+        local sprite_center_y = gy - drag_offset_y
+        dragging_sprite.x = sprite_center_x - dragging_sprite.display_scale * 32 / 2  -- 32 is base sprite size
+        dragging_sprite.y = sprite_center_y - dragging_sprite.display_scale * 32 / 2
+        
+        -- Reorder sprites in real-time based on current x positions for visual feedback
+        reorder_selected_upgrades()
+        
+        -- Snap non-dragged sprites to their new positions immediately
+        local selected_upgrades = UpgradeNode.get_selected_upgrades()
+        local flying_sprite_size = 128
+        local usable_width = Config.SLOT_WIDTH * UIConfig.DISPLAY_BOX_COUNT
+        local spacing_x = usable_width / (5 + 1)
+        local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
+        local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
+        local center_y = box_y + BOX_HEIGHT / 2
+        local start_x_box = Config.PADDING_X + 30
+        
+        for i, sprite in ipairs(selected_upgrades) do
+            -- Skip the dragged sprite, let it follow the mouse
+            if sprite ~= dragging_sprite then
+                sprite.index = i
+                local target_x = start_x_box + 10 + spacing_x * i
+                local target_y = center_y - flying_sprite_size / 2
+                sprite.x = target_x
+                sprite.y = target_y
+            end
+        end
+        
+        return
+    end
+    
     -- Update hover state for purchased upgrades (active in all game states)
     local upgrade_box_positions = UI.get_upgrade_box_positions()
     
@@ -774,6 +1113,11 @@ function love.mousemoved(x, y, dx, dy)
     else
         hovered_upgrade_index = nil
         hovered_upgrade_id = nil
+    end
+    
+    -- Handle lever mouse movement
+    if game_state == "GAME" then
+        Lever.mouseMoved(gx, gy)
     end
 end
 
@@ -794,12 +1138,25 @@ function love.keypressed(key)
         return
 
     elseif game_state == "MENU" then
-        -- Do nothing in menu state - let mouse clicks handle menu interactions
+        -- Forward keypresses to menu (allow seed input handling)
+        if HomeMenu.keypressed and HomeMenu.keypressed(key) then
+            return
+        end
+        -- Do nothing else in menu state - let mouse clicks handle menu interactions
         return
 
     elseif game_state == "GAME" then
         
         if key == "space" then
+            -- If a sell popup is open, close it on SPACE instead of triggering a spin
+            if selected_sell_upgrade_id then
+                selected_sell_upgrade_id = nil
+                selected_sell_upgrade_index = nil
+                selected_sell_upgrade_position_x = nil
+                selected_sell_upgrade_position_y = nil
+                Shop.close_sell_popup()
+                return
+            end
             print("[KEYPRESSED] Space key detected in GAME state")
             
             if Slots.is_jammed() then
@@ -821,12 +1178,5 @@ function love.keypressed(key)
         else
             Slots.keypressed(key)
         end
-    end
-end
-
-function love.mousemoved(x, y)
-    if game_state == "GAME" then
-        local gx, gy = get_game_coords(x, y)
-        Lever.mouseMoved(gx, gy)
     end
 end

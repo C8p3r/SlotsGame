@@ -143,6 +143,17 @@ function Settings.draw_gems_counter(gems)
     love.graphics.pop()
 end
 
+-- Return the center position of the gems UI element in game coordinates
+function Settings.get_gems_ui_position()
+    local bx = Config.BUTTON_START_X
+    local by = Config.BUTTON_START_Y + 70
+    local width = Config.BUTTON_WIDTH
+    local size = Config.BUTTON_WIDTH
+    local cx = bx + width / 2
+    local cy = by + size / 2
+    return cx, cy
+end
+
 function Settings.draw_menu()
     if not SlotMachine.info_font then return end -- Safety check for fonts
     

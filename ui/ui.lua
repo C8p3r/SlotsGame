@@ -204,199 +204,68 @@ end
 -- ============================================================================
 
 function UI.drawUpgradesLayer()
-    -- Draw selected upgrades and flying animations as a foremost layer
+    -- Draw selected upgrades using unified sprite system
+    -- Sprites manage their own state: "available" (shop), "purchasing" (flying), "owned" (landed), "hovered"
     -- This function should be called AFTER all game content
     -- NOTE: This is called INSIDE the push/pop scale/translate, so coordinates are already in game space
     
-    -- Display box constants
-    local BOX_WIDTH = Config.SLOT_WIDTH
-    local BOX_GAP = Config.SLOT_GAP
+    local selected_upgrades = UpgradeNode.get_selected_upgrades()
+    local max_upgrades = UpgradeNode.get_max_selected_upgrades()
     
+    -- Display box constants
     local start_x = Config.PADDING_X + 30
     local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
     local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
     
-    -- Draw one continuous box spanning all 5 display box positions
-    local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
-    
-    -- Draw MAX upgrades counter in left corner
-    local selected_upgrades = UpgradeNode.get_selected_upgrades()
-    local max_upgrades = UpgradeNode.get_max_selected_upgrades()
+    -- Draw MAX upgrades counter
     love.graphics.setColor(1, 1, 0, 1)
     local counter_font = love.graphics.newFont("splashfont.otf", 14)
     love.graphics.setFont(counter_font)
     local counter_text = #selected_upgrades .. "/" .. max_upgrades
     love.graphics.print(counter_text, start_x + 8, box_y + 6)
     
-    -- Clear upgrade box positions
+    -- Clear upgrade box positions for hover detection
     upgrade_box_positions = {}
     
-    -- Display box dimensions for position calculation
-    local BOX_WIDTH = Config.SLOT_WIDTH
-    local BOX_GAP = Config.SLOT_GAP
-    local start_x_box = Config.PADDING_X + 30
-    local box_y = Config.MESSAGE_Y + Config.DIALOGUE_FONT_SIZE + 40
-    local BOX_HEIGHT = Config.SLOT_Y - box_y - 20
-    local total_width = (BOX_WIDTH * UIConfig.DISPLAY_BOX_COUNT) + (BOX_GAP * (UIConfig.DISPLAY_BOX_COUNT - 1))
-    local usable_width = total_width - 20
-    local spacing_x = usable_width / (5 + 1)
-    local center_y = box_y + BOX_HEIGHT / 2
-    local flying_sprite_size = 128
-    
-    -- NOTE: Upgrades are now drawn as flying sprites only - they stay at 128x128 size after landing
-    
-    -- Draw flying upgrade animations (and landed upgrades at 128x128 size)
-    local flying_upgrades = UpgradeNode.get_flying_upgrades()
-    local selected_upgrades = UpgradeNode.get_selected_upgrades()
-    
-    -- Store positions for ALL selected upgrades (flying and landed)
-    -- This ensures hover detection works even after animations complete
-    for upgrade_index, upgrade_id in ipairs(selected_upgrades) do
-        local final_x = start_x_box + 10 + spacing_x * upgrade_index
-        local final_y = center_y - flying_sprite_size / 2
-        
-        -- Store base position for this upgrade (will be used for non-animating upgrades)
-        table.insert(upgrade_box_positions, {
-            base_x = final_x,
-            base_y = final_y,
-            wobble_x = 0,
-            wobble_y = 0,
-            upgrade_id = upgrade_id,
-            index = upgrade_index,
-            display_scale = 4
-        })
-    end
-    
-    if #flying_upgrades > 0 then
-        local upgrade_units_image = love.graphics.newImage("assets/upgrade_units_UI.png")
-        upgrade_units_image:setFilter("nearest", "nearest")
-        
-        local shift_animations = UpgradeNode.get_shift_animations()
-        
-        for idx, fly_upgrade in ipairs(flying_upgrades) do
-            -- Find this upgrade's current index in selected_upgrades
-            local upgrade_index = nil
-            for i, upgrade_id in ipairs(selected_upgrades) do
-                if upgrade_id == fly_upgrade.upgrade_id then
-                    upgrade_index = i
-                    break
-                end
-            end
-            
-            if upgrade_index then
-                -- Calculate final position in display box based on current index
-                local final_x = start_x_box + 10 + spacing_x * upgrade_index
-                local final_y = center_y - flying_sprite_size / 2
-                
-                -- Apply shift animation offset if this upgrade is shifting
-                local animated_x = final_x
-                for _, shift in ipairs(shift_animations) do
-                    if shift.upgrade_index == upgrade_index then
-                        local progress = shift.elapsed / shift.duration
-                        local eased = 1 - (1 - progress) ^ 3
-                        local from_x = start_x_box + 10 + spacing_x * shift.from_index
-                        local to_x = start_x_box + 10 + spacing_x * shift.to_index
-                        animated_x = from_x + (to_x - from_x) * eased
-                        break
-                    end
-                end
-                
-                local progress = math.min(fly_upgrade.elapsed / fly_upgrade.duration, 1.0)
-                local eased = 1 - (1 - progress) ^ 3
-                
-                -- Interpolate from start to animated final position
-                local current_x = fly_upgrade.start_x + (animated_x - fly_upgrade.start_x) * eased
-                local current_y = fly_upgrade.start_y + (final_y - fly_upgrade.start_y) * eased
-                
-                -- Get upgrade icon (32x32 source size)
-                local icon_size = 32
-                local cols = 5
-                local upgrade_id = fly_upgrade.upgrade_id
-                local col = ((upgrade_id - 1) % cols)
-                local row = math.floor((upgrade_id - 1) / cols)
-                local quad = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, upgrade_units_image:getDimensions())
-                
-                -- Add wobble effect
-                local Shop = require("ui.shop")
-                local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(upgrade_id)
-                
-                -- Draw flying icon at 128x128 size with wobble
-                love.graphics.setColor(1, 1, 1, 1)
-                local display_scale = 4
-                love.graphics.draw(upgrade_units_image, quad, current_x + wobble_x, current_y + wobble_y, 0, display_scale, display_scale)
-                
-                -- Update position for this upgrade with animated values
-                -- Find the entry we pre-created and update it with animation data
-                for i, pos in ipairs(upgrade_box_positions) do
-                    if pos.index == upgrade_index then
-                        upgrade_box_positions[i] = {
-                            base_x = current_x,
-                            base_y = current_y,
-                            wobble_x = wobble_x,
-                            wobble_y = wobble_y,
-                            upgrade_id = upgrade_id,
-                            index = upgrade_index,
-                            display_scale = display_scale
-                        }
-                        break
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Draw non-flying (landed) upgrades at their final positions with wobble
-    -- This ensures all upgrades are visible and have position data for hover/click detection
+    -- Draw all sprites
     if #selected_upgrades > 0 then
-        -- Check which upgrades are already flying
-        local flying_ids = {}
-        for _, fly in ipairs(flying_upgrades) do
-            flying_ids[fly.upgrade_id] = true
-        end
-        
-        -- Draw non-flying upgrades
+        local UpgradeSprite = require("systems.upgrade_sprite")
+        local UpgradeNodeLocal = require("systems.upgrade_node")
         local upgrade_units_image = love.graphics.newImage("assets/upgrade_units_UI.png")
         upgrade_units_image:setFilter("nearest", "nearest")
         
-        for upgrade_index, upgrade_id in ipairs(selected_upgrades) do
-            -- Skip if this upgrade is already being drawn by flying animation
-            if not flying_ids[upgrade_id] then
-                -- Calculate final position in display box
-                local final_x = start_x_box + 10 + spacing_x * upgrade_index
-                local final_y = center_y - flying_sprite_size / 2
-                
-                -- Get upgrade icon (32x32 source size)
+        -- Rarity colors (matching shop display)
+        local rarity_colors = {
+            Standard = {0.7, 0.7, 0.7},
+            Premium = {0.2, 0.7, 1},
+            ["High-Roller"] = {1, 0.85, 0.2},
+            VIP = {0.9, 0.3, 0.8}
+        }
+        
+        for idx, sprite in ipairs(selected_upgrades) do
+            -- Draw the sprite (draw function will use wobble internally)
+            UpgradeSprite.draw(sprite)
+            
+            -- (Removed: cost/rarity labels under owned sprites to keep purchased items visually clean)
+            
+            -- Only store position for sprites that are NOT animating
+            -- Don't create clickboxes for "purchasing" or "shifting" sprites
+            if sprite.state ~= "purchasing" and sprite.state ~= "shifting" then
+                -- Get drawn position for hover detection
+                local drawn_x, drawn_y = UpgradeSprite.get_drawn_position(sprite)
                 local icon_size = 32
-                local cols = 5
-                local col = ((upgrade_id - 1) % cols)
-                local row = math.floor((upgrade_id - 1) / cols)
-                local quad = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, upgrade_units_image:getDimensions())
+                local size = icon_size * sprite.display_scale
                 
-                -- Add wobble effect
-                local Shop = require("ui.shop")
-                local wobble_x, wobble_y = Shop.calculate_upgrade_wobble(upgrade_id)
-                
-                -- Draw icon at 128x128 size with wobble
-                love.graphics.setColor(1, 1, 1, 1)
-                local display_scale = 4
-                love.graphics.draw(upgrade_units_image, quad, final_x + wobble_x, final_y + wobble_y, 0, display_scale, display_scale)
-                
-                -- Update position for this upgrade with current wobble values
-                -- Find the entry we pre-created and update it
-                for i, pos in ipairs(upgrade_box_positions) do
-                    if pos.index == upgrade_index then
-                        upgrade_box_positions[i] = {
-                            base_x = final_x,
-                            base_y = final_y,
-                            wobble_x = wobble_x,
-                            wobble_y = wobble_y,
-                            upgrade_id = upgrade_id,
-                            index = upgrade_index,
-                            display_scale = display_scale
-                        }
-                        break
-                    end
-                end
+                -- Store position for hover/click detection
+                table.insert(upgrade_box_positions, {
+                    x = drawn_x,
+                    y = drawn_y,
+                    width = size,
+                    height = size,
+                    upgrade_id = sprite.upgrade_id,
+                    index = idx,
+                    sprite = sprite
+                })
             end
         end
     end
