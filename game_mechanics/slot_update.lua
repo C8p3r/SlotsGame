@@ -128,6 +128,7 @@ function SlotUpdate.update(dt, state)
     if (state.jam_splash_timer or 0) > 0 then state.jam_splash_timer = state.jam_splash_timer - dt end
     if (state.block_splash_timer or 0) > 0 then state.block_splash_timer = state.block_splash_timer - dt end
     if (state.keepsake_splash_timer or 0) > 0 then state.keepsake_splash_timer = state.keepsake_splash_timer - dt end
+    -- upgrade splash removed; no-op
 
     if state.slots then
         for i = 1, #state.slots do

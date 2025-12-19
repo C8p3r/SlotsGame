@@ -363,8 +363,8 @@ function SlotDraw.draw(state)
         -- Money Splash Echoes (5 Instances)
         local payout_text = state.display_payout_string 
         
-        -- Center scatter (Base result)
-        draw_generic_splash(current_splash_text, current_splash_color, 1.0, 0, MAIN_Y_START_ABOVE * 0.8, MAIN_Y_END_ABOVE * 0.8, 1.0, 1.0, 5, 1)
+            -- Center scatter (Base result)
+            draw_generic_splash(current_splash_text, current_splash_color, 1.0, 0, MAIN_Y_START_ABOVE * 0.8, MAIN_Y_END_ABOVE * 0.8, 1.0, 1.0, 5, 1)
 
         -- Money Splash 1: Left Top
         draw_generic_splash(payout_text, state.display_payout_color, 0.7, -350, top_edge_y + 10, top_edge_y - 50, 0.7, 1.1, 10, 15)

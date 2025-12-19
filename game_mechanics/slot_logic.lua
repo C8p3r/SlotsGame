@@ -86,6 +86,12 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
     
     local vals = {}
     for i = 1, #state.slots do table.insert(vals, state.slots[i].symbol_index) end
+
+    -- DEBUG: log spin result entry for diagnosing QTE/fail triggers
+    print(string.format("[SLOT_LOGIC] resolve_spin_result called: was_blocked=%s, consecutive_wins=%d", tostring(was_blocked), (state.consecutive_wins or 0)))
+    local vals_str = ""
+    for i,v in ipairs(vals) do vals_str = vals_str .. tostring(v) .. (i<#vals and "," or "") end
+    print("[SLOT_LOGIC] Symbols: " .. vals_str)
     
     state.winning_indices = {}
     
@@ -106,10 +112,23 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
         spin_multiplier = 0.0; win_name = "FLOP!"; result_color = {1.0, 0.2, 0.2}
     end
     
-    -- Store spin multiplier in state
-    state.current_spin_multiplier = spin_multiplier
+    -- Allow upgrades to modify scoring (bet and multiplier)
+    local UpgradeEffects = require("systems.upgrade_effects")
+    local mods = UpgradeEffects.get_score_modifiers(vals, state)
 
-    initial_win_amount = math.floor(state.current_bet_amount * spin_multiplier)
+    -- Store spin multiplier in state (after applying effects)
+    local adjusted_multiplier = spin_multiplier
+    adjusted_multiplier = adjusted_multiplier * (1 + (mods.scaling_multiplier or 0))
+    adjusted_multiplier = adjusted_multiplier + (mods.flat_multiplier or 0)
+    state.current_spin_multiplier = adjusted_multiplier
+
+    -- Adjust bet amount according to upgrades
+    local adjusted_bet = state.current_bet_amount
+    adjusted_bet = adjusted_bet + (mods.flat_bet_increase or 0)
+    adjusted_bet = adjusted_bet + math.floor((mods.percent_balance_bet_increase or 0) * (state.bankroll or 0))
+    adjusted_bet = math.floor(adjusted_bet * (1 + (mods.scaling_bet_increase or 0)))
+
+    initial_win_amount = math.floor(adjusted_bet * adjusted_multiplier)
     local streak_context = state.consecutive_wins
     
     -- Apply Streak Multiplier only if there is a base win (non-zero spin_multiplier)
@@ -119,6 +138,9 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
     local trigger_auto_spin = false 
 
     -- 3. INTERCEPT FOR BLOCK GAME SUCCESS
+    -- Note: determine "is_win" based on the base spin_multiplier (pattern match)
+    -- rather than post-upgrade adjusted payout. This ensures streaks break when
+    -- the spin had no winning pattern, even if upgrades add a flat bonus.
     if was_blocked == true then
         final_win_amount = math.ceil(state.current_bet_amount * 0.01) 
         is_win = true
@@ -126,7 +148,7 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
         result_color = state.BLOCK_COLOR
         trigger_auto_spin = true 
         state.current_spin_multiplier = 0.0 -- QTE win doesn't grant a spin multiplier
-    elseif initial_win_amount > 0 then
+    elseif spin_multiplier > 0 then
         is_win = true
     else
         is_win = false
@@ -155,6 +177,7 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
     end
     
     -- *** QTE CHECK ***
+    print(string.format("[SLOT_LOGIC] QTE check: was_blocked=%s, is_win=%s, streak_context=%d", tostring(was_blocked), tostring(is_win), streak_context))
     if was_blocked == nil and is_win == false and streak_context >= 2 then 
         state.block_game_active = true
         state.qte_targets = {}

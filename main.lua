@@ -70,6 +70,13 @@ local function update_scale()
     offset_y = (h - (Config.GAME_HEIGHT * scale)) / 2
 end
 
+-- Convert screen coordinates to game (virtual) coordinates
+-- (moved to top of file)
+
+local function get_game_coords(x, y)
+    return (x - offset_x) / scale, (y - offset_y) / scale
+end
+
 -- Helper to draw menu text WITHIN the scaled (virtual) space
 local function draw_menu_content()
     local w = Config.GAME_WIDTH
@@ -104,6 +111,8 @@ local function draw_menu_content()
 
     local hovered_id, ks_x, ks_y, ks_w, ks_h = Keepsakes.get_hovered_keepsake(game_mouse_x, game_mouse_y, grid_start_x, grid_start_y, 96, 32)
     HomeMenu.draw_keepsake_tooltip(hovered_id, ks_x, ks_y, ks_w, ks_h)
+
+    -- (no debug overlay)
     
 
 end
@@ -492,12 +501,13 @@ function love.draw()
         UI.drawButtons(state, Slots, nil, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         UI.drawBankrollAndPayout(state, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         
-        -- 4f-2. Draw lucky box tooltip on hover
-        local game_mouse_x, game_mouse_y = love.mouse.getPosition()
-        local w, h = love.graphics.getDimensions()
-        -- Transform mouse coords to game space if needed
+        -- 4f-2. Draw lucky box tooltip on hover (use game-space coords)
+        local sx, sy = love.mouse.getPosition()
+        local game_mouse_x, game_mouse_y = get_game_coords(sx, sy)
         local lucky_hover = HomeMenu.get_lucky_box_hover(game_mouse_x, game_mouse_y)
         HomeMenu.draw_lucky_box_tooltip(lucky_hover)
+
+        -- (no in-game keepsake debug overlay)
         
         -- 4g. Draw the full settings menu overlay (on top of everything else)
         if game_state == "SETTINGS" then
@@ -567,11 +577,8 @@ function love.draw()
         UpgradeTooltips.draw_all(upgrade_box_positions)
         love.graphics.pop()
     end
-end
 
-local function get_game_coords(x, y)
-    return (x - offset_x) / scale, (y - offset_y) / scale
-end
+        end
 
 -- Reorder sprites in selected_upgrades array based on x positions
 local function reorder_selected_upgrades()
@@ -753,6 +760,8 @@ function love.mousepressed(x, y, button)
                     Shop.remove_shop_sprite(selected_upgrade_id)
                     UpgradeNode.reposition_owned_upgrades()
                     UpgradeNode.add_flying_upgrade(selected_upgrade_id, selected_upgrade_position_x, selected_upgrade_position_y)
+                    -- Ensure BUY popup begins exiting immediately after purchase
+                    if Shop.force_close_buy_popup then Shop.force_close_buy_popup() end
                 end
             end
             selected_upgrade_id = nil
@@ -826,7 +835,11 @@ function love.mousepressed(x, y, button)
         if sell_action == "sell" then
             if selected_sell_upgrade_id then
                 local sell_value = UpgradeNode.get_sell_value(selected_sell_upgrade_id)
-                Shop.add_gems(sell_value)
+                    Shop.add_gems(sell_value)
+                    -- Spawn small icon splashes from the sold sprite position
+                    if Shop.spawn_upgrade_splash then
+                        Shop.spawn_upgrade_splash(selected_sell_upgrade_id, selected_sell_upgrade_position_x or gx, selected_sell_upgrade_position_y or gy, 6)
+                    end
                 print(string.format("[SHOP] Sold upgrade %d for %d gems (total gems: %d)", selected_sell_upgrade_id, sell_value, Shop.get_gems()))
                 UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
                 -- Reposition remaining upgrades after sale
@@ -886,6 +899,10 @@ function love.mousepressed(x, y, button)
             if selected_sell_upgrade_id then
                 local sell_value = UpgradeNode.get_sell_value(selected_sell_upgrade_id)
                 Shop.add_gems(sell_value)
+                -- Spawn small icon splashes from the sold sprite position
+                if Shop.spawn_upgrade_splash then
+                    Shop.spawn_upgrade_splash(selected_sell_upgrade_id, selected_sell_upgrade_position_x or gx, selected_sell_upgrade_position_y or gy, 6)
+                end
                 print(string.format("[GAME] Sold upgrade %d for %d gems (total gems: %d)", selected_sell_upgrade_id, sell_value, Shop.get_gems()))
                 UpgradeNode.remove_upgrade(selected_sell_upgrade_id)
                 -- Reposition remaining upgrades after sale

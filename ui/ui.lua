@@ -157,10 +157,8 @@ function UI.drawIndicatorBoxes(state, Slots, draw_wavy_text, get_wiggle_modifier
     local pb_y = Config.PERCENT_BOX_Y
     local flat_str = string.format("$%.0f", current_flat_bet)
     local pct_str = string.format("%.1f%%", current_pct * 100)
-    
-    love.graphics.setColor(UIConfig.BOX_BACKGROUND_COLOR)
-    love.graphics.rectangle("fill", pb_x, pb_y, Config.INDICATOR_BOX_WIDTH, Config.INDICATOR_BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
-    
+
+    -- Render flat and percent values (no bounding box)
     love.graphics.setColor(UIConfig.PERCENT_BOX_LABEL_COLOR)
     local tw1 = button_font:getWidth(flat_str)
     local tw2 = button_font:getWidth(pct_str)
@@ -171,24 +169,13 @@ function UI.drawIndicatorBoxes(state, Slots, draw_wavy_text, get_wiggle_modifier
     draw_wavy_text(flat_str, pb_x + (Config.INDICATOR_BOX_WIDTH - tw1) / 2, start_y, button_font, UIConfig.PERCENT_BOX_LABEL_COLOR, 220, 1.0, get_wiggle_modifiers)
     draw_wavy_text(pct_str, pb_x + (Config.INDICATOR_BOX_WIDTH - tw2) / 2, start_y + th + line_spacing, button_font, UIConfig.PERCENT_BOX_LABEL_COLOR, 230, 1.0, get_wiggle_modifiers)
 
-    -- 2. TOTAL BET DISPLAY BOX 
+    -- 2. Upgrade Multiplier UI (replaces BET= display)
     local tb_x = Config.INDICATOR_BOX_START_X
     local tb_y = Config.TOTAL_BET_BOX_Y
-    local bet_label = "BET="
-    local bet_amount = string.format("$%.0f", Slots.getCurrentBet())
-    
-    love.graphics.setColor(UIConfig.BOX_BACKGROUND_COLOR)
-    love.graphics.rectangle("fill", tb_x, tb_y, Config.INDICATOR_BOX_WIDTH, Config.INDICATOR_BOX_HEIGHT, UIConfig.BOX_CORNER_RADIUS)
-    
-    love.graphics.setColor(UIConfig.TOTAL_BET_LABEL_COLOR)
-    local tw_label = button_font:getWidth(bet_label)
-    local tw_amount = button_font:getWidth(bet_amount)
-    th = button_font:getHeight()
-    local line_spacing_bet = 5
-    local total_height_bet = th * 2 + line_spacing_bet
-    local start_y_bet = tb_y + (Config.INDICATOR_BOX_HEIGHT - total_height_bet) / 2 - 2
-    draw_wavy_text(bet_label, tb_x + (Config.INDICATOR_BOX_WIDTH - tw_label) / 2, start_y_bet, button_font, UIConfig.TOTAL_BET_LABEL_COLOR, 240, 1.0, get_wiggle_modifiers)
-    draw_wavy_text(bet_amount, tb_x + (Config.INDICATOR_BOX_WIDTH - tw_amount) / 2, start_y_bet + th + line_spacing_bet, button_font, UIConfig.TOTAL_BET_LABEL_COLOR, 245, 1.0, get_wiggle_modifiers)
+    local UpgradeEffects = require("systems.upgrade_effects")
+    local mods = UpgradeEffects.get_score_modifiers(nil, state)
+    local upgrade_mult_value = 1.0 + (mods.scaling_multiplier or 0)
+    draw_multiplier_box(state, tb_y, upgrade_mult_value, "UPGRADE MULT", {1.0, 0.2, 0.2}, draw_wavy_text, get_wiggle_modifiers)
 end
 
 -- ============================================================================

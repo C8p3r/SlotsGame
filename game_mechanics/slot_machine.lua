@@ -11,6 +11,7 @@ local BackgroundRenderer = require("systems.background_renderer")
 local Difficulty = require("systems.difficulty")
 
 local SlotMachine = {}
+local UpgradeNode = require("systems.upgrade_node")
 
 -- =============================================================================
 --  STATE VARIABLES
@@ -105,6 +106,16 @@ local state = {
     keepsake_splash_color = {0.2, 1.0, 0.8},
     keepsake_splash_timing = nil,  -- "spin" or "score"
     KEEPSAKE_SPLASH_DURATION = 1.2,
+    -- Upgrade-specific small splash (localized to upgrade icon)
+    upgrade_splash_timer = 0.0,
+    upgrade_splash_text = "",
+    upgrade_splash_color = {1,1,1},
+    upgrade_splash_x = 0,
+    upgrade_splash_y = 0,
+    upgrade_splash_scale = 0.6,
+    UPGRADE_SPLASH_DURATION = 0.6,
+    -- Block starting new spins while upgrade trigger animations are processing
+    triggers_blocking = false,
     
     -- State Transition Tracking
     previous_is_spinning = false,
@@ -436,7 +447,7 @@ function SlotMachine.load()
 end
 
 function SlotMachine.start_spin()
-    if state.is_spinning or state.block_game_active then return end
+    if state.is_spinning or state.block_game_active or state.triggers_blocking then return end
     
     -- Call spin start callback if set
     if state.spin_start_callback then
@@ -505,18 +516,52 @@ function SlotMachine.draw()
 end
 
 function SlotMachine.resolve_spin_result(was_blocked)
-    SlotLogic.resolve_spin_result(state, was_blocked)
-    if state.consecutive_wins > state.high_streak then
-        state.high_streak = state.consecutive_wins
+    -- Gather per-slot symbol results for trigger checks
+    local vals = {}
+    for i = 1, #state.slots do table.insert(vals, state.slots[i].symbol_index) end
+
+    -- Prevent repeated resolve calls from SlotUpdate while we process triggers
+    state.is_spinning = false
+    -- Block starting new spins until triggers complete
+    state.triggers_blocking = true
+
+    -- Run upgrade visual triggers (pulse icons & splash) BEFORE scoring calculations
+    UpgradeNode.handle_score_triggers(vals, state, function()
+        -- Now run normal scoring resolution
+        SlotLogic.resolve_spin_result(state, was_blocked)
+        if state.consecutive_wins > state.high_streak then
+            state.high_streak = state.consecutive_wins
+        end
+        -- Update background hue based on streak
+        BackgroundRenderer.setStreakHue(state.consecutive_wins)
+        
+        -- Call spin completion callback if set
+        if state.spin_complete_callback then
+            state.spin_complete_callback()
+            state.spin_complete_callback = nil
+        end
+        -- Allow new spins again
+        state.triggers_blocking = false
+    end)
+end
+
+-- Allow other systems to request a short upgrade flavor splash during triggers
+-- Show a small localized splash above an upgrade icon.
+-- Optional: x,y are screen/game-space coordinates to spawn at; scale is visual scale.
+function SlotMachine.show_upgrade_splash(text, color, duration, x, y, scale)
+    if text == nil or text == "" then return end
+    state.upgrade_splash_text = text or ""
+    state.upgrade_splash_color = color or {1,1,1}
+    state.upgrade_splash_duration = duration or state.UPGRADE_SPLASH_DURATION
+    state.upgrade_splash_timer = state.upgrade_splash_duration
+    if x and y then
+        state.upgrade_splash_x = x
+        state.upgrade_splash_y = y
+    else
+        state.upgrade_splash_x = 0
+        state.upgrade_splash_y = 0
     end
-    -- Update background hue based on streak
-    BackgroundRenderer.setStreakHue(state.consecutive_wins)
-    
-    -- Call spin completion callback if set
-    if state.spin_complete_callback then
-        state.spin_complete_callback()
-        state.spin_complete_callback = nil
-    end
+    state.upgrade_splash_scale = scale or 0.6
 end
 
 function SlotMachine.set_spin_complete_callback(callback)

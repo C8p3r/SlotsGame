@@ -26,13 +26,12 @@ local is_open = false
 local current_round = 0
 local spins_remaining = 0
 local balance_goal = 0
-local spins_per_round = 10
+local spins_per_round = 100
 local base_balance_goal = 1000
 local goal_multiplier = 1.5  -- Increase goal by 50% each round
 
 -- Shop sprites for all 50 upgrades
 local shop_sprites = {}  -- Sprites for unpurchased upgrades in shop
-local purchased_this_round = {}  -- Set of upgrades purchased in this round (persist even if sold)
 
 -- Shop animation state
 local shop_entrance_timer = 0
@@ -64,17 +63,19 @@ local invert_shader = nil
 -- Gem splash particle state
 local gem_splashes = {}
 local last_spend_invert_timer = 0
+-- Upgrade icon splash particles (spawn small copies of the sold upgrade)
+local upgrade_splashes = {}
 
 -- Popup animation state (for BUY and SELL popups)
-local buy_popup_state = "closed"  -- "closed" | "entering" | "open" | "exiting"
+local buy_popup_state = "closed"  -- "closed" | "open"
 local buy_popup_timer = 0
-local buy_popup_duration = 0.18
+local buy_popup_duration = 0.0
 local last_selected_upgrade_id = nil
 local last_selected_upgrade_box_index = nil
 
 local sell_popup_state = "closed"
 local sell_popup_timer = 0
-local sell_popup_duration = 0.18
+local sell_popup_duration = 0.0
 local last_selected_sell_index = nil
 -- forward declare popup timer advancer so Shop.update can call it
 local advance_popup_timers
@@ -163,7 +164,7 @@ function Shop.initialize(initial_bankroll)
     end
 
     -- Clear purchased tracker for new game
-    purchased_this_round = {}
+    UpgradeNode.clear_purchased_this_round()
 
     print("[SHOP.INITIALIZE] Shop initialized! spins_remaining: " .. spins_remaining .. ", balance_goal: " .. balance_goal)
 end
@@ -176,7 +177,7 @@ function Shop.start_new_round()
     is_open = true
 
     -- Clear purchased tracker for new round
-    purchased_this_round = {}
+    UpgradeNode.clear_purchased_this_round()
 
     -- Reset bankroll to initial amount for the new round if slot machine state exists
     local SlotMachine = require("game_mechanics.slot_machine")
@@ -193,13 +194,19 @@ function Shop.open()
     is_shop_closing = false
     shop_entrance_timer = 0
 
-    -- Generate 3 random upgrades for this shop session
-    UpgradeNode.generate_shop_upgrades()
+    -- Generate shop upgrades; allow upgrades to increase offered items
+    local UpgradeEffects = require("systems.upgrade_effects")
+    local shop_mods = UpgradeEffects.get_shop_mods()
+    local count = 3 + (shop_mods and (shop_mods.extra_items or 0) or 0)
+    UpgradeNode.generate_shop_upgrades(count)
 
-    -- Convert excess spins to gems immediately
+    -- Convert excess spins to gems immediately (allow upgrades to modify conversion)
     local excess_spins = spins_remaining - 0
+    local UpgradeEffects2 = require("systems.upgrade_effects")
+    local currency_mods = UpgradeEffects2.get_currency_mods()
+    local conv_mult = currency_mods and currency_mods.gem_conversion_mult or 1.0
     if excess_spins > 0 then
-        gems_gained = excess_spins * conversion_rate
+        gems_gained = math.floor(excess_spins * conversion_rate * conv_mult)
         gems = gems + gems_gained
         print("[SHOP] Added " .. gems_gained .. " gems! Total gems: " .. gems)
     else
@@ -257,7 +264,7 @@ function Shop.remove_shop_sprite(upgrade_id)
         end
     end
     -- Mark as purchased this round so it won't reappear if sold
-    purchased_this_round[upgrade_id] = true
+    UpgradeNode.mark_purchased(upgrade_id)
 end
 
 function Shop.get_gems()
@@ -301,6 +308,30 @@ function Shop.spawn_gem_splash(amount, x, y, spent)
     end
     if spent then
         last_spend_invert_timer = 0.35
+    end
+end
+
+function Shop.spawn_upgrade_splash(upgrade_id, x, y, count)
+    count = count or 6
+    if not upgrade_units_quads or #upgrade_units_quads == 0 then return end
+    for i = 1, count do
+        local angle = math.rad(math.random(0, 360))
+        local speed = math.random(60, 220)
+        local vx = math.cos(angle) * speed * (0.5 + math.random() * 0.8)
+        local vy = math.sin(angle) * speed * (0.5 + math.random() * 0.8)
+        table.insert(upgrade_splashes, {
+            x = x or 0,
+            y = y or 0,
+            vx = vx,
+            vy = vy,
+            ttl = 0.6 + math.random() * 0.5,
+            age = 0,
+            rot = math.random() * math.pi * 2,
+            spin = (math.random() - 0.5) * 6,
+            scale = 0.5 + math.random() * 0.6,
+            quad_index = upgrade_id,
+            alpha = 1
+        })
     end
 end
 
@@ -372,37 +403,31 @@ function Shop.update(dt)
             p.alpha = 1 - (p.age / p.ttl)
         end
     end
+    -- Update upgrade splashes
+    for i = #upgrade_splashes, 1, -1 do
+        local p = upgrade_splashes[i]
+        p.age = p.age + dt
+        if p.age >= p.ttl then
+            table.remove(upgrade_splashes, i)
+        else
+            p.vy = p.vy + 600 * dt
+            p.vx = p.vx * (1 - math.min(dt * 2.5, 0.9))
+            p.vy = p.vy * (1 - math.min(dt * 1.2, 0.9))
+            p.x = p.x + p.vx * dt
+            p.y = p.y + p.vy * dt
+            p.rot = p.rot + p.spin * dt
+            p.alpha = 1 - (p.age / p.ttl)
+        end
+    end
     -- Advance popup timers for BUY/SELL animations
     advance_popup_timers(dt)
 end
 
 -- Advance popup animation timers
 advance_popup_timers = function(dt)
-    -- BUY popup
-    if buy_popup_state == "entering" then
-        buy_popup_timer = math.min(1, buy_popup_timer + dt / buy_popup_duration)
-        if buy_popup_timer >= 1 then buy_popup_state = "open" end
-    elseif buy_popup_state == "exiting" then
-        buy_popup_timer = math.max(0, buy_popup_timer - dt / buy_popup_duration)
-        if buy_popup_timer <= 0 then buy_popup_state = "closed" end
-    elseif buy_popup_state == "open" then
-        buy_popup_timer = 1
-    else
-        buy_popup_timer = 0
-    end
-
-    -- SELL popup
-    if sell_popup_state == "entering" then
-        sell_popup_timer = math.min(1, sell_popup_timer + dt / sell_popup_duration)
-        if sell_popup_timer >= 1 then sell_popup_state = "open" end
-    elseif sell_popup_state == "exiting" then
-        sell_popup_timer = math.max(0, sell_popup_timer - dt / sell_popup_duration)
-        if sell_popup_timer <= 0 then sell_popup_state = "closed" end
-    elseif sell_popup_state == "open" then
-        sell_popup_timer = 1
-    else
-        sell_popup_timer = 0
-    end
+    -- Popups are instant now; ensure timers reflect state
+    buy_popup_timer = (buy_popup_state == "open") and 1 or 0
+    sell_popup_timer = (sell_popup_state == "open") and 1 or 0
 end
 
 -- Expose helper so draw loop can query sell animation active state
@@ -412,13 +437,19 @@ end
 
 -- Programmatically open/close the sell popup (called from main input handlers)
 function Shop.open_sell_popup()
-    sell_popup_state = "entering"
-    sell_popup_timer = 0
+    sell_popup_state = "open"
+    sell_popup_timer = 1
 end
 
 function Shop.close_sell_popup()
-    sell_popup_state = "exiting"
-    sell_popup_timer = 1
+    sell_popup_state = "closed"
+    sell_popup_timer = 0
+end
+
+-- Force the BUY popup to begin exiting (public API for external callers)
+function Shop.force_close_buy_popup()
+    buy_popup_state = "closed"
+    buy_popup_timer = 0
 end
 
 function Shop.check_next_button_click(x, y)
@@ -469,7 +500,7 @@ function Shop.check_upgrade_box_click(x, y)
             print(log_msg)
             debug_file = io.open("debug_clicks.log", "a")
             if debug_file then debug_file:write(log_msg .. "\n"); debug_file:close() end
-            if upgrade_id and not purchased_this_round[upgrade_id] then
+            if upgrade_id and not UpgradeNode.is_purchased_this_round(upgrade_id) then
                 -- Only return if upgrade hasn't been purchased this round
                 -- Return box index and position - main.lua will set the selection state
                 return i, box_x + box_width / 2, box_y_pos + box_height / 2
@@ -532,14 +563,14 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
     -- Slide up from bottom: start below screen, slide to final position
     local slide_offset = (1 - ease_progress) * Config.GAME_HEIGHT
 
-    -- Detect selection change for BUY popup and trigger enter/exit animations
+    -- Detect selection change for BUY popup and switch instantly (no animation)
     if selected_upgrade_id ~= last_selected_upgrade_id then
         if selected_upgrade_id then
-            buy_popup_state = "entering"
-            buy_popup_timer = 0
-        else
-            buy_popup_state = "exiting"
+            buy_popup_state = "open"
             buy_popup_timer = 1
+        else
+            buy_popup_state = "closed"
+            buy_popup_timer = 0
         end
     end
     
@@ -664,7 +695,7 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
         end
         
         -- Check if this upgrade was purchased earlier this round (don't show even if sold)
-        local is_purchased_this_round = purchased_this_round[upgrade_id] or false
+        local is_purchased_this_round = UpgradeNode.is_purchased_this_round(upgrade_id) or false
         
         -- Only draw the upgrade icon if it hasn't been selected yet and wasn't purchased this round
         if upgrade_id and upgrade_units_image and upgrade_units_quads[upgrade_id] and not is_selected and not is_purchased_this_round then
@@ -761,7 +792,7 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
     -- But only if the upgrade hasn't been purchased yet
     if tooltip_box_index then
         local upgrade_id = UpgradeNode.get_box_upgrade(tooltip_box_index)
-        local is_purchased = purchased_this_round[upgrade_id] or false
+        local is_purchased = UpgradeNode.is_purchased_this_round(upgrade_id) or false
         if not is_purchased then
             Shop.draw_upgrade_tooltip(tooltip_box_index, tooltip_box_start_x, tooltip_box_y_pos, tooltip_box_width, tooltip_box_height, tooltip_box_gap)
         end
@@ -771,6 +802,8 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
 
     -- Draw gem splashes on top of the shop UI
     Shop.draw_gem_splashes()
+    -- Draw small sold-upgrade splashes on top
+    Shop.draw_upgrade_splashes()
     
     -- Draw BUY button below selected upgrade if selected or while its popup is animating
     local effective_selected_id = selected_upgrade_id or last_selected_upgrade_id
@@ -779,8 +812,8 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
         -- Check if the selected upgrade has already been purchased
         local is_purchased = false
         local selected_upgrades = UpgradeNode.get_selected_upgrades()
-        for _, selected_id in ipairs(selected_upgrades) do
-            if selected_id == selected_upgrade_id then
+        for _, spr in ipairs(selected_upgrades) do
+            if spr and spr.upgrade_id and spr.upgrade_id == effective_selected_id then
                 is_purchased = true
                 break
             end
@@ -832,12 +865,10 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
             local mx, my = get_game_mouse()
             local is_hover = mx >= button_x and mx <= button_x + button_width and my >= button_y and my <= button_y + button_height
 
-            -- Apply popup animation progress (fade + slide) with easing
-            local buy_progress = buy_popup_timer -- normalized 0..1
-            local eased = ease_out_cubic(buy_progress)
-            local slide_offset_popup = (1 - eased) * POPUP_SLIDE_PIXELS
-            local alpha = POPUP_MIN_ALPHA + (1 - POPUP_MIN_ALPHA) * eased
-            local draw_y = button_y + slide_offset_popup
+            -- No animation: immediate popup
+            local slide_offset_popup = 0
+            local alpha = 1
+            local draw_y = button_y
 
             if affordable then
                 if is_hover then
@@ -880,7 +911,7 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
         end
     end
 
-    -- Update last_selected flag for popup transitions: preserve last box until animation completes
+    -- Update last_selected flag for popup transitions: preserve last selection until popup fully closes
     if selected_upgrade_id and selected_upgrade_box_index then
         last_selected_upgrade_id = selected_upgrade_id
         last_selected_upgrade_box_index = selected_upgrade_box_index
@@ -902,6 +933,24 @@ function Shop.draw_gem_splashes()
         local ox, oy = 16, 16
         love.graphics.draw(ui_assets, gem_icon_quad, p.x, p.y, p.rot, p.scale, p.scale, ox, oy)
         love.graphics.setShader()
+        love.graphics.pop()
+    end
+end
+
+function Shop.draw_upgrade_splashes()
+    if #upgrade_splashes == 0 then return end
+    if not upgrade_units_image then return end
+    for i = #upgrade_splashes, 1, -1 do
+        local p = upgrade_splashes[i]
+        local alpha = p.alpha or 1
+        love.graphics.push()
+        love.graphics.setColor(1,1,1,alpha)
+        local quad = upgrade_units_quads and upgrade_units_quads[p.quad_index]
+        if quad then
+            local size = 32
+            local scale = p.scale or 1
+            love.graphics.draw(upgrade_units_image, quad, p.x, p.y, p.rot, scale, scale, size/2, size/2)
+        end
         love.graphics.pop()
     end
 end
@@ -971,12 +1020,10 @@ function Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_position
     local is_hover = mx >= button_x and mx <= button_x + button_width and my >= button_y and my <= button_y + button_height
     -- popup state is controlled by main via Shop.open_sell_popup / Shop.close_sell_popup
 
-    -- Compute sell popup progress and apply slide + fade with easing
-    local sell_progress = sell_popup_timer
-    local eased_s = ease_out_cubic(sell_progress)
-    local slide_offset_popup = (1 - eased_s) * POPUP_SLIDE_PIXELS
-    local alpha = POPUP_MIN_ALPHA + (1 - POPUP_MIN_ALPHA) * eased_s
-    local draw_y = button_y + slide_offset_popup
+    -- No animation: immediate sell popup
+    local slide_offset_popup = 0
+    local alpha = 1
+    local draw_y = button_y
 
     if is_hover then
         love.graphics.setColor(0.85, 0.15, 0.15, alpha)
@@ -1237,7 +1284,17 @@ function Shop.check_popup_button_click(x, y, selected_upgrade_id, selected_upgra
     local button_width = 80
     local button_height = 40
     local button_x = box_x + (box_width - button_width) / 2
-    local button_y = box_y_pos + box_height + 10 + slide_offset
+    -- Compute button_y using the same icon positioning math as Shop.draw so hitbox matches visuals
+    local center_y = box_y_pos + box_height / 2
+    local actual_icon_size = 128
+    local drift_y = math.sin(love.timer.getTime() * 1.5 + selected_upgrade_box_index + 1) * 6
+    local float_offset = 0
+    -- If there is an actively selected upgrade, apply the same float offset used when rendering
+    if selected_upgrade_id then
+        float_offset = math.sin(love.timer.getTime() * 3) * 5 - 10
+    end
+    local icon_y = center_y - actual_icon_size / 2 + drift_y + float_offset
+    local button_y = icon_y + actual_icon_size + 6 + slide_offset
     
     if x >= button_x and x <= button_x + button_width and
        y >= button_y and y <= button_y + button_height then
