@@ -71,9 +71,13 @@ local function draw_sprite_symbol(index, x_center, y_center, alpha, seed, loaded
     end
     
     love.graphics.setColor(1, 1, 1, alpha)
-    local ox = (Config.SOURCE_SPRITE_WIDTH * Config.SPRITE_SCALE) / 2
-    local oy = (Config.SOURCE_SPRITE_HEIGHT * Config.SPRITE_SCALE) / 2
-    love.graphics.draw(sprite, x_center - ox + dx, y_center - oy + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE)
+    if type(sprite) == "table" and sprite.image and sprite.quad then
+        love.graphics.draw(sprite.image, sprite.quad, x_center + dx, y_center + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE, Config.SOURCE_SPRITE_WIDTH / 2, Config.SOURCE_SPRITE_HEIGHT / 2)
+    else
+        local ox = (Config.SOURCE_SPRITE_WIDTH * Config.SPRITE_SCALE) / 2
+        local oy = (Config.SOURCE_SPRITE_HEIGHT * Config.SPRITE_SCALE) / 2
+        love.graphics.draw(sprite, x_center - ox + dx, y_center - oy + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE)
+    end
 end
 
 -- Multiplier box drawing moved to ui.lua - UI.drawIndicatorBoxes()

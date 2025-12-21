@@ -400,13 +400,21 @@ function SlotMachine.load()
     
     state.symbol_canvas = love.graphics.newCanvas(Config.GAME_WIDTH, Config.GAME_HEIGHT)
     
-    for i, filename in ipairs(Config.SPRITE_FILES) do
-        local ok, img = pcall(love.graphics.newImage, filename)
-        if ok then
-            img:setFilter("nearest", "nearest")
-            table.insert(state.loaded_sprites, img)
-        else
+    -- Load sprite atlas (5x5 icons 32px). Use first row for the 5 base symbols.
+    local atlas_ok, atlas = pcall(love.graphics.newImage, "assets/slot_token_array.png")
+    if atlas_ok and atlas then
+        atlas:setFilter("nearest", "nearest")
+        local icon_size = 32
+        local cols = 5
+        for col = 0, cols - 1 do
+            local q = love.graphics.newQuad(col * icon_size, 0, icon_size, icon_size, atlas:getDimensions())
+            table.insert(state.loaded_sprites, { image = atlas, quad = q })
+        end
+    else
+        -- Atlas missing: create simple blank placeholders to avoid crashes
+        for i = 1, 5 do
             local p = love.image.newImageData(32, 32)
+            for y = 0, 31 do for x = 0, 31 do p:setPixel(x, y, 0.2, 0.2, 0.2, 1) end end
             table.insert(state.loaded_sprites, love.graphics.newImage(p))
         end
     end

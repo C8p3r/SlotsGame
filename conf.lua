@@ -6,13 +6,8 @@ Config.GAME_WIDTH = 1400
 Config.GAME_HEIGHT = 788
 
 -- 2. SPRITE SETTINGS
-Config.SPRITE_FILES = {
-    "assets/1.png",
-    "assets/2.png",
-    "assets/3.png",
-    "assets/4.png",
-    "assets/5.png"
-}
+-- Sprite atlas: use a 160x160 `assets/slot_token_array.png` arranged as 5x5 icons (32x32).
+-- The slot code will load the first row of this atlas as the primary symbols.
 Config.SOURCE_SPRITE_WIDTH = 32
 Config.SOURCE_SPRITE_HEIGHT = 32
 Config.TARGET_DISPLAY_SIZE = 120

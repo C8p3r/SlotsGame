@@ -71,9 +71,15 @@ local function draw_sprite_symbol(index, x_center, y_center, alpha, seed, loaded
     end
     
     love.graphics.setColor(1, 1, 1, alpha)
-    local ox = (Config.SOURCE_SPRITE_WIDTH * Config.SPRITE_SCALE) / 2
-    local oy = (Config.SOURCE_SPRITE_HEIGHT * Config.SPRITE_SCALE) / 2
-    love.graphics.draw(sprite, x_center - ox + dx, y_center - oy + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE)
+    -- Support two sprite formats: Image directly, or {image=atlas, quad=quad}
+    if type(sprite) == "table" and sprite.image and sprite.quad then
+        -- Draw quad from atlas with origin centered
+        love.graphics.draw(sprite.image, sprite.quad, x_center + dx, y_center + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE, Config.SOURCE_SPRITE_WIDTH / 2, Config.SOURCE_SPRITE_HEIGHT / 2)
+    else
+        local ox = (Config.SOURCE_SPRITE_WIDTH * Config.SPRITE_SCALE) / 2
+        local oy = (Config.SOURCE_SPRITE_HEIGHT * Config.SPRITE_SCALE) / 2
+        love.graphics.draw(sprite, x_center - ox + dx, y_center - oy + dy, 0, Config.SPRITE_SCALE, Config.SPRITE_SCALE)
+    end
 end
 
 -- Multiplier box drawing moved to ui.lua - UI.drawIndicatorBoxes()
@@ -225,7 +231,12 @@ function SlotDraw.draw(state)
                         dy = math.cos(time * final_drift_speed * 0.8 + drift_seed * 1.5) * (final_drift_range * 0.5)
                         
                         love.graphics.setColor(1, 1, 1, 1.0)
-                        love.graphics.draw(state.loaded_sprites[symbol_index], x_center - ox + dx, y_center - oy + dy, 0, draw_scale, draw_scale)
+                        local sprite_entry = state.loaded_sprites[symbol_index]
+                        if type(sprite_entry) == "table" and sprite_entry.image and sprite_entry.quad then
+                            love.graphics.draw(sprite_entry.image, sprite_entry.quad, x_center + dx, y_center + dy, 0, draw_scale, draw_scale, Config.SOURCE_SPRITE_WIDTH/2, Config.SOURCE_SPRITE_HEIGHT/2)
+                        else
+                            love.graphics.draw(sprite_entry, x_center - ox + dx, y_center - oy + dy, 0, draw_scale, draw_scale)
+                        end
                         
                         -- Unset shader
                         love.graphics.setShader()

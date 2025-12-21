@@ -49,10 +49,10 @@ local RARITY_COSTS = {
 
 -- Rarity weights used for shop appearance likelihood (higher = more common)
 local RARITY_WEIGHTS = {
-    Standard = 60,
-    Premium = 25,
-    ["High-Roller"] = 10,
-    VIP = 5,
+    Standard = 75,
+    Premium = 20,
+    ["High-Roller"] = 4,
+    VIP = 1,
 }
 
 -- Optional local RNG state for deterministic shop generation (LCG)
@@ -291,57 +291,9 @@ function UpgradeNode.update(dt)
         UpgradeSprite.update(sprite, dt)
     end
 
-    -- Process scoring-time trigger queue (sequential pulses)
-    if _trigger_callback and _trigger_queue and #_trigger_queue > 0 then
-        if _trigger_timer > 0 then
-            _trigger_timer = _trigger_timer - dt
-            if _trigger_timer <= 0 then
-                -- move to next trigger
-                _trigger_index = _trigger_index + 1
-                if _trigger_index > #_trigger_queue then
-                    -- finished
-                    local cb = _trigger_callback
-                    _trigger_callback = nil
-                    _trigger_queue = nil
-                    _trigger_index = 0
-                    _trigger_timer = 0
-                    if cb then cb() end
-                else
-                    -- start next pulse
-                    local entry = _trigger_queue[_trigger_index]
-                    if entry and entry.sprite then
-                        UpgradeSprite.start_pulse(entry.sprite, entry.duration or 0.45, entry.scale or 1.5)
-                        local mult = math.max(_trigger_min_multiplier, (_trigger_base_multiplier or 1.0) * ((_trigger_accel or 1.0) ^ (_trigger_index - 1)))
-                        local dur = (entry.duration or 0.45) * mult
-                        local gap = (entry.gap or 0.12) * mult
-                        _trigger_timer = dur + gap
-                    else
-                        -- skip invalid and continue
-                        _trigger_timer = 0
-                    end
-                end
-            end
-        else
-            -- start first trigger
-            _trigger_index = 1
-            local entry = _trigger_queue[_trigger_index]
-            if entry and entry.sprite then
-                UpgradeSprite.start_pulse(entry.sprite, entry.duration or 0.45, entry.scale or 1.5)
-                local mult = math.max(_trigger_min_multiplier, (_trigger_base_multiplier or 1.0) * ((_trigger_accel or 1.0) ^ (_trigger_index - 1)))
-                local dur = (entry.duration or 0.45) * mult
-                local gap = (entry.gap or 0.12) * mult
-                _trigger_timer = dur + gap
-            else
-                -- nothing to trigger
-                local cb = _trigger_callback
-                _trigger_callback = nil
-                _trigger_queue = nil
-                _trigger_index = 0
-                _trigger_timer = 0
-                if cb then cb() end
-            end
-        end
-    end
+    -- Note: trigger sequencing for scoring visuals is handled by `systems.payout_system`
+    -- to centralize timing and avoid duplicate sequences. UpgradeNode no longer
+    -- processes its own _trigger_queue here.
 
     -- Finally, remove any sprites marked for deletion and animate repositioning if needed
     for i = #selected_upgrades, 1, -1 do
@@ -528,26 +480,20 @@ end
 -- Called by SlotMachine to run visual pulses for upgrades before scoring calculations
 -- vals: array of symbol indices per slot (1..num_slots)
 function UpgradeNode.handle_score_triggers(vals, state, on_complete)
-    -- If a trigger queue is already processing, bail immediately to avoid reentrant calls
-    if _trigger_queue and #_trigger_queue > 0 then
-        if on_complete then on_complete() end
-        return
-    end
-
-    -- Build queue of selected upgrades to pulse. Respect per-upgrade trigger metadata if present.
-    _trigger_queue = {}
+    -- Build queue of selected upgrades to pulse and delegate sequencing to PayoutSystem
+    local PayoutSystem = require("systems.payout_system")
+    local queue = {}
     for _, sprite in ipairs(selected_upgrades) do
         local def = UpgradeNode.get_definition(sprite.upgrade_id)
         if def then
             local allow = false
             if def.trigger == nil then
-                -- default: trigger on score
                 allow = true
             elseif def.trigger.type == "score" then
                 allow = true
             elseif def.trigger.type == "slot" then
                 local slot_idx = def.trigger.slot or 1
-                local symbol_cond = def.trigger.symbol -- optional
+                local symbol_cond = def.trigger.symbol
                 if vals and vals[slot_idx] then
                     if not symbol_cond or vals[slot_idx] == symbol_cond then
                         allow = true
@@ -555,20 +501,17 @@ function UpgradeNode.handle_score_triggers(vals, state, on_complete)
                 end
             end
             if allow then
-                table.insert(_trigger_queue, { sprite = sprite, duration = def.pulse_duration, scale = def.pulse_scale, text = def.flavor, color = def.pulse_color, gap = def.pulse_gap })
+                table.insert(queue, { sprite = sprite, duration = def.pulse_duration, scale = def.pulse_scale, gap = def.pulse_gap })
             end
         end
     end
 
-    if #_trigger_queue == 0 then
-        -- nothing to do
+    if #queue == 0 then
         if on_complete then on_complete() end
         return
     end
 
-    _trigger_callback = on_complete
-    _trigger_index = 0
-    _trigger_timer = 0
+    PayoutSystem.start_trigger_sequence(queue, on_complete)
 end
 
 function UpgradeNode.get_flying_upgrades()

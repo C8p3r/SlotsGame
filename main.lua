@@ -20,6 +20,8 @@ local Shop = require("ui.shop")
 local Failstate = require("ui.failstate")
 local UpgradeNode = require("systems.upgrade_node")
 local UpgradeTooltips = require("ui.upgrade_tooltips")
+local PayoutSystem = require("systems.payout_system")
+local GameInfo = require("ui.game_info")
 
 local main_canvas
 local scale = 1
@@ -183,6 +185,7 @@ function love.load()
     HomeMenu.start_entrance_animation()  -- Start menu entrance animation on startup
     UpgradeNode.load()  -- Load upgrade node system
     update_scale()
+    GameInfo.initialize()
 end
 
 function love.resize(w, h)
@@ -249,6 +252,10 @@ function love.update(dt)
     
     -- Update upgrade sprites (handles state transitions and animations)
     UpgradeNode.update(dt)
+    -- Update payout system trigger sequencing (scoring animations)
+    PayoutSystem.update(dt)
+    -- Update game info menu state
+    GameInfo.update(dt)
     
     -- Safety check: ensure all sprites have valid indices and states
     local selected_upgrades = UpgradeNode.get_selected_upgrades()
@@ -407,6 +414,7 @@ function love.update(dt)
     end
 end
 
+
 function love.draw()
     local w, h = love.graphics.getDimensions()
     
@@ -499,6 +507,8 @@ function love.draw()
         local state = Slots.getState()
         UI.drawIndicatorBoxes(state, Slots, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         UI.drawButtons(state, Slots, nil, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
+        -- Draw the game info button (above lever / right of display)
+        GameInfo.draw_button()
         UI.drawBankrollAndPayout(state, SlotDraw.draw_wavy_text, Slots.get_wiggle_modifiers)
         
         -- 4f-2. Draw lucky box tooltip on hover (use game-space coords)
@@ -541,6 +551,8 @@ function love.draw()
             if selected_sell_upgrade_id or Shop.is_sell_animating() then
                 Shop.draw_sell_button(selected_sell_upgrade_index, upgrade_box_positions)
             end
+            -- Draw the info panel above upgrades layer if open (moved later to render on top)
+            -- GameInfo.draw()
         end
     end
     
@@ -575,6 +587,12 @@ function love.draw()
         love.graphics.translate(offset_x, offset_y)
         love.graphics.scale(scale)
         UpgradeTooltips.draw_all(upgrade_box_positions)
+        love.graphics.pop()
+        -- Re-apply scaled transform and draw GameInfo on top so it appears in all states
+        love.graphics.push()
+        love.graphics.translate(offset_x, offset_y)
+        love.graphics.scale(scale)
+        GameInfo.draw()
         love.graphics.pop()
     end
 
@@ -676,6 +694,14 @@ function love.mousepressed(x, y, button)
     if debug_file then
         debug_file:write(debug_msg .. "\n")
         debug_file:close()
+    end
+
+    -- Global GameInfo button handling: toggle if clicked, but not from the main menu or during menu transition
+    if game_state ~= "MENU" and game_state ~= "HOME_MENU_TO_GAME_TRANSITION" then
+        if GameInfo and GameInfo.check_button_click_screen and GameInfo.check_button_click_screen(x, y) then
+            GameInfo.toggle()
+            return
+        end
     end
     
     if game_state == "MENU" then
@@ -978,6 +1004,11 @@ function love.mousepressed(x, y, button)
         -- Check for QTE Click
         if Slots.check_qte_click(gx, gy) then
             -- If handled, return immediately to consume click
+            return
+        end
+        -- Check if Game Info button was clicked
+        if GameInfo.check_button_click(gx, gy) then
+            GameInfo.toggle()
             return
         end
         

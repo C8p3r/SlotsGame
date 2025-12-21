@@ -2,6 +2,7 @@
 local Config = require("conf")
 local Difficulty = require("systems.difficulty")
 local SlotQTE = require("game_mechanics.slot_QTE")
+local PayoutSystem = require("systems.payout_system")
 
 local SlotLogic = {} 
 local Slots = nil -- Reference injected by setSlotMachineModule
@@ -128,12 +129,15 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
     adjusted_bet = adjusted_bet + math.floor((mods.percent_balance_bet_increase or 0) * (state.bankroll or 0))
     adjusted_bet = math.floor(adjusted_bet * (1 + (mods.scaling_bet_increase or 0)))
 
-    initial_win_amount = math.floor(adjusted_bet * adjusted_multiplier)
+        -- Use centralized payout calculation (includes upgrade modifiers)
+        local payout = PayoutSystem.calculate(spin_multiplier, state.current_bet_amount, vals, state, { total_multiplier = Slots.getStreakMultiplier() })
+        state.current_spin_multiplier = payout.adjusted_multiplier
+        initial_win_amount = payout.initial_win_amount
     local streak_context = state.consecutive_wins
     
     -- Apply Streak Multiplier only if there is a base win (non-zero spin_multiplier)
     local total_multiplier = Slots.getStreakMultiplier()
-    local final_win_amount = initial_win_amount * total_multiplier 
+        local final_win_amount = payout.final_win_amount 
     
     local trigger_auto_spin = false 
 
@@ -293,6 +297,7 @@ function SlotLogic.resolve_spin_result(state, was_blocked)
         if speed_inverse_mult > 3.0 then speed_inverse_mult = 3.0 end 
         state.splash_timer = state.SPLASH_DURATION / speed_inverse_mult
     end
+    
 end
 
 function SlotLogic.setSlotMachineModule(module)

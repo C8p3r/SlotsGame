@@ -173,7 +173,8 @@ end
 function Shop.start_new_round()
     current_round = current_round + 1
     spins_remaining = spins_per_round
-    balance_goal = math.floor(base_balance_goal * (goal_multiplier ^ (current_round - 1)))
+    local ShopScaling = require("config.shop_scaling")
+    balance_goal = ShopScaling.get_goal(base_balance_goal, current_round, goal_multiplier)
     is_open = true
 
     -- Clear purchased tracker for new round
@@ -615,7 +616,8 @@ function Shop.draw(current_bankroll, SlotMachine, selected_upgrade_id, selected_
     shop_print("CURRENT BALANCE: $" .. string.format("%.0f", current_bankroll), stats_x, stats_y + line_height)
     
     -- Next balance goal (for the upcoming round)
-    local next_balance_goal = math.floor(base_balance_goal * (goal_multiplier ^ current_round))
+    local ShopScaling = require("config.shop_scaling")
+    local next_balance_goal = ShopScaling.get_goal(base_balance_goal, current_round + 1, goal_multiplier)
     love.graphics.setColor(1, 0.4, 0.4, 1)  -- Red/Pink
     shop_print("NEXT GOAL: $" .. string.format("%.0f", next_balance_goal), stats_x, stats_y + line_height * 2)
     
@@ -1331,13 +1333,8 @@ end
 
 -- Calculate wobble effect for an upgrade at a given time
 -- Wobble is deterministic based on upgrade_id to ensure consistency
-function Shop.calculate_upgrade_wobble(upgrade_id)
-    local time = love.timer.getTime()
-    local seed = upgrade_id * 0.7
-    local wobble_x = math.sin(time * Config.DRIFT_SPEED + seed) * Config.DRIFT_RANGE
-    local wobble_y = math.cos(time * Config.DRIFT_SPEED * 0.8 + seed * 1.5) * Config.DRIFT_RANGE
-    return wobble_x, wobble_y
-end
+-- Wobble calculation is handled by `UpgradeSprite.update_wobble(sprite)`;
+-- legacy `Shop.calculate_upgrade_wobble` removed to avoid duplication.
 
 -- DEPRECATED: get_upgrade_bounding_box is no longer needed
 -- The bounding box data is now stored directly in upgrade_box_positions
