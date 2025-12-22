@@ -1,7 +1,7 @@
 -- slot_draw.lua
 local Config = require("conf")
-local SlotBorders = require("slot_borders")
-local Background = require("background_renderer")
+local SlotBorders = require("game_mechanics.slot_borders")
+local Background = require("systems.background_renderer")
 
 local SlotDraw = {}
 

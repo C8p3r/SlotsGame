@@ -7,6 +7,7 @@ local Keepsakes = require("systems.keepsakes")
 local UIConfig = require("ui.ui_config")
 local StartScreen = require("ui_screens.start_screen")
 local UpgradeNode = require("systems.upgrade_node")
+local AtlasSelector = require("ui.atlas_row_selector")
 
 local HomeMenu = {}
 
@@ -31,6 +32,7 @@ function HomeMenu.load_fonts()
     HomeMenu.fonts.title = love.graphics.newFont(font_file, StartScreen.TITLE_SIZE)
     HomeMenu.fonts.prompt = love.graphics.newFont(font_file, StartScreen.PROMPT_SIZE)
     HomeMenu.fonts.start_button = love.graphics.newFont(font_file, 100)
+    AtlasSelector.load()
 end
 
 -- Shop seed UI state
@@ -98,6 +100,8 @@ function HomeMenu.update(dt)
             is_menu_exiting = false
         end
     end
+    -- update small atlas selector UI
+    AtlasSelector.update(dt)
 end
 
 -- Draw the main menu
@@ -158,6 +162,13 @@ function HomeMenu.draw(menu_exit_timer, menu_exit_duration)
     love.graphics.setColor(0.8, 0.8, 0.8, entrance_ease)
     love.graphics.setFont(Config.GAME_WIDTH == 1920 and love.graphics.getFont() or love.graphics.newFont("splashfont.otf", 14))
     Keepsakes.draw_grid(w * 0.02, h * 0.25 + 50, 96, 32, true)
+    -- Draw atlas row selector on the right side under the keepsakes
+    local menu_offset = entrance_offset - exit_slide_offset
+    local pad = 20
+    local _, _, sel_w, sel_h = AtlasSelector.get_bounds(0,0)
+    local as_x = w - pad - sel_w + menu_offset
+    local as_y = h * 0.25 + 50 + 140
+    AtlasSelector.draw(as_x, as_y, entrance_ease)
     
     -- Draw Difficulty Selection
     love.graphics.setFont(love.graphics.getFont())
@@ -414,6 +425,26 @@ function HomeMenu.check_seed_click(x, y)
     end
 
     return false
+end
+
+-- Check if atlas selector was clicked (placed below keepsakes on the left)
+function HomeMenu.check_selector_click(x, y)
+    local w = Config.GAME_WIDTH
+    local h = Config.GAME_HEIGHT
+    local entrance_progress = menu_entrance_duration > 0 and (menu_entrance_timer / menu_entrance_duration) or 1
+    local entrance_ease = 1 - (1 - entrance_progress) ^ 3
+    local entrance_offset = (1 - entrance_ease) * w
+
+    local exit_progress = menu_exit_duration > 0 and (menu_exit_timer / menu_exit_duration) or 0
+    local exit_ease = exit_progress * exit_progress
+    local exit_slide_offset = exit_ease * w
+
+    local menu_offset = entrance_offset - exit_slide_offset
+    local pad = 20
+    local _, _, sel_w, sel_h = AtlasSelector.get_bounds(0,0)
+    local base_x = w - pad - sel_w + menu_offset
+    local base_y = h * 0.25 + 50 + 140
+    return AtlasSelector.check_click(x, y, base_x, base_y)
 end
 
 -- Handle key input for seed entry

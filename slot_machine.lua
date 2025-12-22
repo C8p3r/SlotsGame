@@ -1,14 +1,14 @@
 -- slot_machine.lua
 local Config = require("conf")
-local Dialogue = require("ui/dialogue") 
+local Dialogue = require("ui_screens.dialogue") 
 local SlotLogic = require("slot_logic") 
 local SlotDraw = require("slot_draw")   
-local SlotUpdate = require("slot_update") 
-local SlotBorders = require("slot_borders")
-local SlotSmoke = require("slot_smoke")
-local SlotQTE = require("slot_QTE")
-local BackgroundRenderer = require("background_renderer")
-local Difficulty = require("difficulty")
+local SlotUpdate = require("game_mechanics.slot_update") 
+local SlotBorders = require("game_mechanics.slot_borders")
+local SlotSmoke = require("systems.slot_smoke")
+local SlotQTE = require("game_mechanics.slot_QTE")
+local BackgroundRenderer = require("systems.background_renderer")
+local Difficulty = require("systems.difficulty")
 
 local SlotMachine = {}
 
@@ -400,14 +400,16 @@ function SlotMachine.load()
     
     state.symbol_canvas = love.graphics.newCanvas(Config.GAME_WIDTH, Config.GAME_HEIGHT)
     
-    -- Load sprite atlas (5x5 icons 32px). Use first row for the 5 base symbols.
+    -- Load sprite atlas (5x5 icons 32px). Use configured row for the base symbols.
     local atlas_ok, atlas = pcall(love.graphics.newImage, "assets/slot_token_array.png")
     if atlas_ok and atlas then
         atlas:setFilter("nearest", "nearest")
+        state.atlas_image = atlas
+        state.atlas_row = Config.SLOT_ATLAS_ROW or 0
         local icon_size = 32
         local cols = 5
         for col = 0, cols - 1 do
-            local q = love.graphics.newQuad(col * icon_size, 0, icon_size, icon_size, atlas:getDimensions())
+            local q = love.graphics.newQuad(col * icon_size, state.atlas_row * icon_size, icon_size, icon_size, atlas:getDimensions())
             table.insert(state.loaded_sprites, { image = atlas, quad = q })
         end
     else
@@ -417,6 +419,23 @@ function SlotMachine.load()
             for y = 0, 31 do for x = 0, 31 do p:setPixel(x, y, 0.2, 0.2, 0.2, 1) end end
             table.insert(state.loaded_sprites, love.graphics.newImage(p))
         end
+    end
+
+    function SlotMachine.set_atlas_row(row)
+        if not state.atlas_image then return false end
+        state.atlas_row = row or 0
+        local icon_size = 32
+        local cols = 5
+        state.loaded_sprites = {}
+        for col = 0, cols - 1 do
+            local q = love.graphics.newQuad(col * icon_size, state.atlas_row * icon_size, icon_size, icon_size, state.atlas_image:getDimensions())
+            table.insert(state.loaded_sprites, { image = state.atlas_image, quad = q })
+        end
+        -- Wrap existing slot indices to new sprite count
+        for i = 1, #state.slots do
+            state.slots[i].symbol_index = ((state.slots[i].symbol_index - 1) % #state.loaded_sprites) + 1
+        end
+        return true
     end
     
     local num_slots = Config.SLOT_COUNT or 5

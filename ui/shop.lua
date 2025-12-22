@@ -5,9 +5,15 @@ local UIConfig = require("ui.ui_config")
 local UpgradeNode = require("systems.upgrade_node")
 local UpgradeSprite = require("systems.upgrade_sprite")
 local UpgradeTooltips = require("ui.upgrade_tooltips")
-local Settings = require("ui.settings")
 
 local Shop = {}
+
+-- Try to load the atlas selector module (optional)
+local AtlasSelector = nil
+do
+    local ok, mod = pcall(require, "ui.atlas_row_selector")
+    if ok then AtlasSelector = mod end
+end
 
 -- Global shop text vertical offset (negative = move up)
 local TEXT_Y_OFFSET = -15
@@ -66,6 +72,17 @@ local last_spend_invert_timer = 0
 -- Upgrade icon splash particles (spawn small copies of the sold upgrade)
 local upgrade_splashes = {}
 
+-- Atlas flip animation state (Shop drives the flip now)
+local atlas_flip = {
+    anim = false,
+    flips = 6,
+    flip_duration = 0.12,
+    flip_elapsed = 0,
+    flips_done = 0,
+    switched = false,
+    target_mode = nil
+}
+
 -- Popup animation state (for BUY and SELL popups)
 local buy_popup_state = "closed"  -- "closed" | "open"
 local buy_popup_timer = 0
@@ -93,6 +110,7 @@ local POPUP_MIN_ALPHA = 0.35
 local function load_ui_assets()
     if not ui_assets then
         ui_assets = love.graphics.newImage("assets/UI_assets.png")
+        ui_assets:setFilter("nearest", "nearest")
         -- Assuming 4 columns per row, second row second column = quad index 6
         -- Row 2, Col 2: (row-1) * cols + col = (2-1) * 4 + 2 = 6
         local quad_width = 32
@@ -213,11 +231,31 @@ function Shop.open()
     else
         gems_gained = 0
     end
+    -- Start atlas flip to gem icons for visual feedback
+    if AtlasSelector then
+        atlas_flip.anim = true
+        atlas_flip.flips_done = 0
+        atlas_flip.flip_elapsed = 0
+        atlas_flip.flips = 6
+        atlas_flip.flip_duration = 0.12
+        atlas_flip.switched = false
+        atlas_flip.target_mode = "gem"
+    end
 end
 function Shop.close()
     is_shop_closing = true
     is_shop_entering = false
     shop_entrance_timer = shop_entrance_duration  -- Start from end, count down
+    -- Start atlas flip back to rows
+    if AtlasSelector then
+        atlas_flip.anim = true
+        atlas_flip.flips_done = 0
+        atlas_flip.flip_elapsed = 0
+        atlas_flip.flips = 6
+        atlas_flip.flip_duration = 0.12
+        atlas_flip.switched = false
+        atlas_flip.target_mode = "row"
+    end
 end
 
 -- Get the current slide offset for click detection
@@ -279,10 +317,73 @@ function Shop.add_gems(amount)
     else
         print(string.format("[SHOP] Removed %d gems (total: %d)", -amount, gems))
     end
-    -- Spawn gem splash particles at the gems UI element center
-    local gx, gy = Settings.get_gems_ui_position()
+    -- Spawn gem splash particles at the gems UI element center (fallback position near lever)
+    local gx, gy = Shop.get_gems_ui_position()
     -- use that center as spawn origin
     Shop.spawn_gem_splash(amount, gx, gy, amount < 0)
+end
+
+
+
+function Shop.get_gems_ui_position()
+    -- Align gems counter with the multiplier/indicator column and make it square
+    local box_w = Config.MULTIPLIER_BOX_WIDTH or Config.INDICATOR_BOX_WIDTH
+    local box_h = Config.MULTIPLIER_BOX_HEIGHT or Config.INDICATOR_BOX_HEIGHT
+    local size = math.max(box_w or 0, box_h or 0)
+    local start_x = Config.MULTIPLIER_BOX_START_X or Config.INDICATOR_BOX_START_X
+    -- Place the gems box just above the multiplier streak area and shift up by 150px total
+    local gap = 8
+    local x = start_x + (size / 2)
+    local y = Config.MULTIPLIER_STREAK_Y - gap - (size / 2) - 150
+    return x, y, size
+end
+
+-- Simple gems counter draw routine used when the original Settings module is removed
+function Shop.draw_gems_counter(count)
+    local gx, gy, size = Shop.get_gems_ui_position()
+    load_ui_assets()
+    local box_size = size or math.max(Config.MULTIPLIER_BOX_WIDTH or 0, Config.MULTIPLIER_BOX_HEIGHT or 0)
+    local x = gx - box_size / 2
+    local y = gy - box_size / 2
+
+    -- Borderless semi-translucent black background to match other UI elements
+    love.graphics.setColor(0, 0, 0, 0.65)
+    love.graphics.rectangle("fill", x, y, box_size, box_size, 8, 8)
+
+    -- Draw gem icon centered and apply a subtle wobble
+    local icon_size = 96 -- 128 * 0.75
+    local base_icon_x = x + (box_size - icon_size) / 2
+    local base_icon_y = y + (box_size - icon_size) / 2
+    local t = love.timer.getTime()
+    local icon_wobble_amp = math.min(8, box_size * 0.03)
+    local icon_wobble_freq = 2.2
+    local icon_wx = math.sin(t * icon_wobble_freq) * icon_wobble_amp
+    local icon_wy = math.sin(t * (icon_wobble_freq * 1.3) + 1.0) * (icon_wobble_amp * 0.5)
+
+    if ui_assets and gem_icon_quad then
+        love.graphics.push()
+        love.graphics.translate(icon_wx, icon_wy)
+        love.graphics.setColor(1,1,1,1)
+        love.graphics.draw(ui_assets, gem_icon_quad, base_icon_x + icon_size/2, base_icon_y + icon_size/2, 0, (icon_size/32), (icon_size/32), 16, 16)
+        love.graphics.pop()
+    else
+        love.graphics.push()
+        love.graphics.translate(icon_wx, icon_wy)
+        love.graphics.setColor(0.2, 0.8, 1, 1)
+        love.graphics.polygon("fill", base_icon_x + icon_size/2, base_icon_y, base_icon_x + icon_size, base_icon_y + icon_size/2, base_icon_x + icon_size/2, base_icon_y + icon_size, base_icon_x, base_icon_y + icon_size/2)
+        love.graphics.pop()
+    end
+
+    -- Draw count text in bottom-left of the element with wobble (2x size)
+    local font = love.graphics.newFont("splashfont.otf", 28)
+    love.graphics.setFont(font)
+    love.graphics.setColor(1, 1, 1, 1)
+    local text_x = x + 8
+    local base_text_y = y + box_size - font:getHeight() - 8
+    local text_wobble_amp = 4
+    local text_wobble_freq = 3.5
+    local text_wy = math.sin(t * text_wobble_freq + 0.5) * text_wobble_amp
+    love.graphics.print(tostring(count or Shop.get_gems()), text_x, base_text_y + text_wy)
 end
 
 
@@ -418,6 +519,35 @@ function Shop.update(dt)
             p.y = p.y + p.vy * dt
             p.rot = p.rot + p.spin * dt
             p.alpha = 1 - (p.age / p.ttl)
+        end
+    end
+    -- Update atlas flip animation (drive AtlasSelector visual state)
+    if atlas_flip.anim and AtlasSelector then
+        atlas_flip.flip_elapsed = atlas_flip.flip_elapsed + dt
+        local fd = atlas_flip.flip_duration
+        while atlas_flip.flip_elapsed >= fd and atlas_flip.flips_done < atlas_flip.flips do
+            atlas_flip.flip_elapsed = atlas_flip.flip_elapsed - fd
+            atlas_flip.flips_done = atlas_flip.flips_done + 1
+            atlas_flip.switched = false
+        end
+        local local_p = math.min(1, atlas_flip.flip_elapsed / fd)
+        local ease_p = 0.5 - 0.5 * math.cos(math.min(1, local_p) * math.pi)
+        local scale_x = 1 - ease_p
+        AtlasSelector.set_visual_scale_x(math.max(0.01, scale_x))
+
+        -- switch display at mid-flip once per flip
+        if local_p >= 0.5 and not atlas_flip.switched and atlas_flip.flips_done <= atlas_flip.flips then
+            AtlasSelector.set_display_mode(atlas_flip.target_mode)
+            atlas_flip.switched = true
+        end
+
+        if atlas_flip.flips_done >= atlas_flip.flips then
+            AtlasSelector.set_visual_scale_x(1)
+            atlas_flip.anim = false
+            atlas_flip.flip_elapsed = 0
+            atlas_flip.flips_done = 0
+            atlas_flip.switched = false
+            atlas_flip.target_mode = nil
         end
     end
     -- Advance popup timers for BUY/SELL animations

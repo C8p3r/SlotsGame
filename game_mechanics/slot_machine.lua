@@ -415,24 +415,45 @@ function SlotMachine.load()
     local atlas_ok, atlas = pcall(love.graphics.newImage, "assets/slot_token_array.png")
     if atlas_ok and atlas then
         atlas:setFilter("nearest", "nearest")
-        local icon_size = 32
-        local cols = 5
-        -- use first row (row 0) for the 5 main sprites
-        for col = 0, cols - 1 do
-            local q = love.graphics.newQuad(col * icon_size, 0, icon_size, icon_size, atlas:getDimensions())
-            table.insert(state.loaded_sprites, { image = atlas, quad = q })
-        end
-    else
-        for i, filename in ipairs(Config.SPRITE_FILES) do
-            local ok, img = pcall(love.graphics.newImage, filename)
-            if ok then
-                img:setFilter("nearest", "nearest")
-                table.insert(state.loaded_sprites, img)
-            else
-                local p = love.image.newImageData(32, 32)
-                table.insert(state.loaded_sprites, love.graphics.newImage(p))
+        state.atlas_image = atlas
+        state.atlas_row = Config.SLOT_ATLAS_ROW or 0
+        local function build_from_atlas(row)
+            state.loaded_sprites = {}
+            local icon_size = 32
+            local cols = 5
+            for col = 0, cols - 1 do
+                local q = love.graphics.newQuad(col * icon_size, row * icon_size, icon_size, icon_size, atlas:getDimensions())
+                table.insert(state.loaded_sprites, { image = atlas, quad = q })
             end
         end
+        build_from_atlas(state.atlas_row)
+    else
+        -- Fallback: create neutral placeholders (no external files)
+        for i = 1, 5 do
+            local p = love.image.newImageData(32, 32)
+            for y = 0, 31 do for x = 0, 31 do p:setPixel(x, y, 0.2, 0.2, 0.2, 1) end end
+            table.insert(state.loaded_sprites, love.graphics.newImage(p))
+        end
+    end
+
+    -- Expose setter to change atlas row at runtime
+    function SlotMachine.set_atlas_row(row)
+        if not state.atlas_image then return false end
+        state.atlas_row = row or 0
+        local icon_size = 32
+        local cols = 5
+        state.loaded_sprites = {}
+        for col = 0, cols - 1 do
+            local q = love.graphics.newQuad(col * icon_size, state.atlas_row * icon_size, icon_size, icon_size, state.atlas_image:getDimensions())
+            table.insert(state.loaded_sprites, { image = state.atlas_image, quad = q })
+        end
+        -- Ensure existing slot indices wrap into new count
+        for i = 1, #state.slots do
+            if state.slots[i].symbol_index > #state.loaded_sprites then
+                state.slots[i].symbol_index = ((state.slots[i].symbol_index - 1) % #state.loaded_sprites) + 1
+            end
+        end
+        return true
     end
     
     local num_slots = Config.SLOT_COUNT or 5

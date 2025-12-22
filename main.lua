@@ -11,7 +11,6 @@ local StartScreen = require("ui_screens.start_screen")
 local SlotBorders = require("game_mechanics.slot_borders")
 local HomeMenu = require("ui_screens.home_menu")
 local SlotSmoke = require("systems.slot_smoke") 
-local Settings = require("ui.settings")
 local UI = require("ui.ui")
 local Difficulty = require("systems.difficulty")
 local Keepsakes = require("systems.keepsakes")
@@ -179,7 +178,6 @@ function love.load()
     BaseFlame.load()
     SlotBorders.load() 
     SlotSmoke.load() 
-    Settings.load()
     Keepsakes.load()
     HomeMenu.load_fonts()
     HomeMenu.start_entrance_animation()  -- Start menu entrance animation on startup
@@ -494,10 +492,12 @@ function love.draw()
         -- 4c. Draw Knob Particles on Top 
         Lever.drawParticles()
         
-        -- 4d. Draw Gems Counter (Always in GAME mode, except MENU)
-        if game_state ~= "SETTINGS" then
-             Settings.draw_gems_counter(Shop.get_gems())
-        end
+           -- 4d. Draw Gems Counter (Always in GAME mode, except MENU)
+           Shop.draw_gems_counter(Shop.get_gems())
+           -- Ensure gem splashes are visible even when the full Shop UI is closed
+           if Shop.draw_gem_splashes then
+               Shop.draw_gem_splashes()
+           end
         
         if game_state == "PAUSE" then
             draw_pause_content()
@@ -519,10 +519,7 @@ function love.draw()
 
         -- (no in-game keepsake debug overlay)
         
-        -- 4g. Draw the full settings menu overlay (on top of everything else)
-        if game_state == "SETTINGS" then
-            Settings.draw_menu()
-        end
+        -- 4g. Settings menu removed — no overlay drawn
         
         -- 4h. Draw shop menu if open
         if game_state == "SHOP" then
@@ -732,9 +729,13 @@ function love.mousepressed(x, y, button)
         end
         
         -- Check if keepsake was clicked
-        if check_keepsake_click(gx, gy) then
+            if check_keepsake_click(gx, gy) then
             return
         end
+            -- Check atlas selector click
+            if HomeMenu.check_selector_click and HomeMenu.check_selector_click(gx, gy) then
+                return
+            end
         return
     end
 
@@ -975,30 +976,7 @@ function love.mousepressed(x, y, button)
         return
     end
     
-    if game_state == "SETTINGS" and button == 1 then
-        if Settings.check_close_button(gx, gy) then
-            game_state = "GAME" -- Close menu
-            return
-        end
-        
-        -- Check if difficulty button was clicked
-        if Settings.check_difficulty_click(gx, gy) then
-            return
-        end
-        
-        -- Check if keepsake was clicked
-        if Settings.check_keepsake_click(gx, gy) then
-            return
-        end
-        
-        -- Check if return to menu button was clicked
-        if Settings.check_return_to_menu_click(gx, gy) then
-            game_state = "MENU" -- Return to main menu
-            Lever.clearParticles()  -- Clear particles when returning to menu
-            return
-        end
-        return
-    end
+    -- SETTINGS state removed; clicks in SETTINGS are ignored and treated like PAUSE
 
     if game_state == "GAME" and button == 1 then
         -- Check for QTE Click

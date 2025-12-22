@@ -117,6 +117,9 @@ Config.TOTAL_BET_BOX_Y = Config.PERCENT_BOX_Y + Config.INDICATOR_BOX_HEIGHT + Co
 Config.MULTIPLIER_BOX_START_X = Config.INDICATOR_BOX_START_X
 Config.MULTIPLIER_BOX_WIDTH = Config.INDICATOR_BOX_WIDTH
 
+-- Atlas row selection: which row (0-based) of the `assets/slot_token_array.png` atlas to use for slot icons
+Config.SLOT_ATLAS_ROW = 0
+
 -- 3. STREAK MULTIPLIER 
 Config.MULTIPLIER_STREAK_Y = Config.TOTAL_BET_BOX_Y + Config.INDICATOR_BOX_HEIGHT + Config.BET_BOX_GAP
 -- 4. SPIN MULTIPLIER 

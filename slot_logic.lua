@@ -1,7 +1,7 @@
 -- slot_logic.lua
 local Config = require("conf")
-local Difficulty = require("difficulty")
-local SlotQTE = require("slot_QTE")
+local Difficulty = require("systems.difficulty")
+local SlotQTE = require("game_mechanics.slot_QTE")
 
 local SlotLogic = {} 
 local Slots = nil -- Reference injected by setSlotMachineModule

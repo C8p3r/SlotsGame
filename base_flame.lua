@@ -1,7 +1,7 @@
 -- base_flame.lua
 local Config = require("conf")
 local SlotMachine = require("slot_machine") -- Assuming this contains getConsecutiveWins()
-local BackgroundRenderer = require("background_renderer")
+local BackgroundRenderer = require("systems.background_renderer")
 
 local BaseFlame = {}
 
